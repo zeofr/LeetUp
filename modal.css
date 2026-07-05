@@ -8,6 +8,8 @@
    Overlay backdrop
    Full-viewport fixed layer with a semi-transparent dark background,
    flexbox-centered so the card appears in the middle of the screen.
+   position: relative is required so the absolutely-positioned close
+   button can anchor to the modal container.
    ----------------------------------------------------------------------- */
 #lgs-modal {
   position: fixed;
@@ -42,13 +44,12 @@
 }
 
 /* -----------------------------------------------------------------------
-   Card header row — title on the left, close button on the right
+   Card header row — title
    ----------------------------------------------------------------------- */
 #lgs-header {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
 }
 
 #lgs-modal-title {
@@ -60,26 +61,43 @@
 
 /* -----------------------------------------------------------------------
    Close button
-   Sits in the header row, right-aligned.
+   Sits outside .lgs-card but inside #lgs-wrapper (position: relative).
+   Absolutely positioned at the top-right corner of the card so LeetCode's
+   card CSS cannot intercept pointer events on it.
    ----------------------------------------------------------------------- */
+#lgs-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 #lgs-close-btn {
-  background: none;
-  background-color: transparent;
-  border: none;
-  font-size: 22px;
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  background: #ffffff;
+  background-color: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  font-size: 18px;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0;
   cursor: pointer;
   color: #57606a;
-  display: block;
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 1000001;
+  pointer-events: auto;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
 }
 
 #lgs-close-btn:hover {
   color: #1f2328;
-  background: none;
-  background-color: transparent;
+  background: #f6f8fa;
+  background-color: #f6f8fa;
+  border-color: #8c959f;
 }
 
 /* -----------------------------------------------------------------------

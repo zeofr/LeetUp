@@ -498,11 +498,15 @@ function injectModal(payload) {
   };
 
   // Close button — dismisses without pushing (Requirements 5.9, 5.10)
+  // Injected directly into the modal backdrop (not the card) and absolutely
+  // positioned so LeetCode's own CSS cannot block pointer events on it.
   const closeBtn = document.createElement('button');
   closeBtn.id = 'lgs-close-btn';
-  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.type = 'button';
+  closeBtn.textContent = '×';
   closeBtn.addEventListener('click', (e) => {
+    e.stopImmediatePropagation();
     e.stopPropagation();
     e.preventDefault();
     closeModal();
@@ -568,17 +572,25 @@ function injectModal(payload) {
     }
   });
 
-  // Card header: title + close button in a row
+  // Card header: title only (close button is on the wrapper, see below)
   const header = document.createElement('div');
   header.id = 'lgs-header';
-  header.append(modalTitle, closeBtn);
+  header.append(modalTitle);
 
   // Wrap inner elements in the card container so .lgs-card styles apply.
-  // The root #lgs-modal remains the full-viewport overlay.
   const card = document.createElement('div');
   card.className = 'lgs-card';
   card.append(header, toolbar, notes, spinner, status, submitBtn);
-  modal.appendChild(card);
+
+  // Wrapper: position: relative anchor for the absolutely-placed close button.
+  // This keeps the × visually at the card's top-right but outside the card's
+  // own stacking context, so LeetCode's card styles cannot block pointer events.
+  const wrapper = document.createElement('div');
+  wrapper.id = 'lgs-wrapper';
+  wrapper.appendChild(card);
+  wrapper.appendChild(closeBtn);
+
+  modal.appendChild(wrapper);
 
   // Clicking the backdrop (outside the card) closes the modal
   modal.addEventListener('click', (e) => {
