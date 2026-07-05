@@ -1,16 +1,5 @@
-/* modal.css — Modal Overlay Styles
-   Injected as a content script CSS file into LeetCode pages (manifest.json).
-   Styles the #lgs-modal overlay and all child elements.
-   Requirements: 5.1
-   NOTE: No !important declarations — avoids CSP issues in content script context. */
+/* modal.css — Modal Overlay Styles */
 
-/* -----------------------------------------------------------------------
-   Overlay backdrop
-   Full-viewport fixed layer with a semi-transparent dark background,
-   flexbox-centered so the card appears in the middle of the screen.
-   position: relative is required so the absolutely-positioned close
-   button can anchor to the modal container.
-   ----------------------------------------------------------------------- */
 #lgs-modal {
   position: fixed;
   top: 0;
@@ -24,11 +13,6 @@
   justify-content: center;
 }
 
-/* -----------------------------------------------------------------------
-   Card container
-   White centered card with padding, rounded corners, drop shadow,
-   and a flex column layout with consistent gap between children.
-   ----------------------------------------------------------------------- */
 .lgs-card {
   background: #ffffff;
   border-radius: 8px;
@@ -43,15 +27,23 @@
   color: #1f2328;
 }
 
-/* -----------------------------------------------------------------------
-   Card header row — title
-   ----------------------------------------------------------------------- */
-#lgs-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
+/* Close button — original working style: align-self pushes it to top-right */
+#lgs-close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+  align-self: flex-end;
+  line-height: 1;
+  padding: 0;
 }
 
+#lgs-close-btn:hover {
+  color: #000;
+}
+
+/* Modal title */
 #lgs-modal-title {
   font-size: 15px;
   font-weight: 600;
@@ -59,61 +51,7 @@
   margin: 0;
 }
 
-/* -----------------------------------------------------------------------
-   Close button
-   Sits outside .lgs-card but inside #lgs-wrapper (position: relative).
-   Absolutely positioned at the top-right corner of the card so LeetCode's
-   card CSS cannot intercept pointer events on it.
-   ----------------------------------------------------------------------- */
-#lgs-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-#lgs-close-btn {
-  position: absolute;
-  top: -14px;
-  right: -14px;
-  background: #ffffff;
-  background-color: #ffffff;
-  border: 1px solid #d0d7de;
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
-  font-size: 18px;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-  color: #57606a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000001;
-  pointer-events: auto;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-}
-
-#lgs-close-btn:hover {
-  color: #1f2328;
-  background: #f6f8fa;
-  background-color: #f6f8fa;
-  border-color: #8c959f;
-}
-
-/* -----------------------------------------------------------------------
-   Markdown formatting toolbar label
-   ----------------------------------------------------------------------- */
-#lgs-toolbar-label {
-  font-size: 11px;
-  color: #57606a;
-  margin-bottom: 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-/* -----------------------------------------------------------------------
-   Markdown formatting toolbar — strip of shortcut buttons
-   ----------------------------------------------------------------------- */
+/* Markdown toolbar */
 #lgs-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -146,12 +84,7 @@
   color: #1f2328;
 }
 
-/* -----------------------------------------------------------------------
-   Notes textarea
-   Full-width with a generous minimum height, monospace font, and a
-   visible border. Vertical resize allowed; box-sizing ensures padding is
-   included within the declared width.
-   ----------------------------------------------------------------------- */
+/* Notes textarea */
 #lgs-notes {
   width: 100%;
   min-height: 200px;
@@ -167,27 +100,19 @@
   background-color: #ffffff;
 }
 
-/* -----------------------------------------------------------------------
-   Loading spinner
-   Hidden by default — JS toggles display to show it.
-   ----------------------------------------------------------------------- */
+/* Spinner */
 #lgs-spinner {
   display: none;
 }
 
-/* -----------------------------------------------------------------------
-   Status / error message area
-   ----------------------------------------------------------------------- */
+/* Status */
 #lgs-status {
   font-size: 13px;
   color: #333333;
   min-height: 18px;
 }
 
-/* -----------------------------------------------------------------------
-   Submit button
-   Primary action button — green background, white text, bold label.
-   ----------------------------------------------------------------------- */
+/* Submit button */
 #lgs-submit-btn {
   background: #2ea44f;
   background-color: #2ea44f;
@@ -207,7 +132,6 @@
   background-color: #2c974b;
 }
 
-/* Disabled state — reduced opacity, not-allowed cursor. */
 #lgs-submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;

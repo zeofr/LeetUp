@@ -481,13 +481,25 @@ function injectModal(payload) {
   modal.id = 'lgs-modal';
   modal.setAttribute('data-payload', JSON.stringify(payload));
 
-  // Loading spinner — declared FIRST so closeModal can reference it without error
+  // All variables declared upfront so every inner function can reference them.
   const spinner = document.createElement('div');
   spinner.id = 'lgs-spinner';
   spinner.style.display = 'none';
 
+  const status = document.createElement('div');
+  status.id = 'lgs-status';
+
+  const submitBtn = document.createElement('button');
+  submitBtn.id = 'lgs-submit-btn';
+  submitBtn.textContent = 'Submit & Push to GitHub';
+
+  const notes = document.createElement('textarea');
+  notes.id = 'lgs-notes';
+  notes.maxLength = 10000;
+  notes.placeholder = 'Write your approach, complexity notes, etc. (optional)';
+
+  // closeModal uses modal/spinner/isModalOpen — all declared above.
   const closeModal = () => {
-    // modal.remove() removes the whole card including the spinner — no need to hide it.
     modal.remove();
     isModalOpen = false;
     document.removeEventListener('keydown', onKeyDown);
@@ -497,25 +509,11 @@ function injectModal(payload) {
     if (e.key === 'Escape') closeModal();
   };
 
-  // Close button — dismisses without pushing (Requirements 5.9, 5.10)
-  // Injected directly into the modal backdrop (not the card) and absolutely
-  // positioned so LeetCode's own CSS cannot block pointer events on it.
+  // Close button — simple direct listener, same as original working code
   const closeBtn = document.createElement('button');
   closeBtn.id = 'lgs-close-btn';
-  closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.type = 'button';
   closeBtn.textContent = '×';
-  closeBtn.addEventListener('click', (e) => {
-    e.stopImmediatePropagation();
-    e.stopPropagation();
-    e.preventDefault();
-    closeModal();
-  });
-
-  // Notes textarea — empty by default, max 10000 chars (Requirement 5.2)
-  const notes = document.createElement('textarea');
-  notes.id = 'lgs-notes';
-  notes.maxLength = 10000;
+  closeBtn.addEventListener('click', closeModal);
 
   // Modal title
   const modalTitle = document.createElement('div');
@@ -525,44 +523,25 @@ function injectModal(payload) {
   // Markdown formatting toolbar
   const toolbar = createToolbar(notes);
 
-  // Status/error message display area
-  const status = document.createElement('div');
-  status.id = 'lgs-status';
-
-  // Submit button (Requirement 5.3)
-  const submitBtn = document.createElement('button');
-  submitBtn.id = 'lgs-submit-btn';
-  submitBtn.textContent = 'Submit & Push to GitHub';
-
-  // Submit button click handler (Requirements 5.5, 5.6, 5.7, 5.8)
+  // Submit button click handler
   submitBtn.addEventListener('click', () => {
-    // Show spinner and disable button to prevent duplicate submissions (Requirement 5.5)
     spinner.style.display = '';
     submitBtn.disabled = true;
 
-    // Read notes value and build the full message payload (Requirement 5.6)
     const notesValue = notes.value;
     const messagePayload = { ...payload, notes: notesValue };
 
-    // Send message to background service worker (Requirement 5.6)
-    // Guard: only call chrome.runtime if the API is available (browser context check)
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.sendMessage(
         { type: 'PUSH_SUBMISSION', payload: messagePayload },
         (response) => {
-          // Requirement 5.10: if the modal was dismissed while the push was in
-          // flight, it will no longer be in the DOM. In that case this callback
-          // must be a complete no-op — do not manipulate spinner/status/button
-          // and do not schedule a second removal.
           if (!document.getElementById('lgs-modal')) return;
 
           if (response && response.ok === true) {
-            // Success: hide spinner, show success message, remove modal after 2000ms (Requirement 5.7)
             spinner.style.display = 'none';
             status.textContent = 'Pushed successfully!';
             setTimeout(closeModal, 2000);
           } else {
-            // Error: hide spinner, display error, re-enable button (Requirement 5.8)
             spinner.style.display = 'none';
             status.textContent = (response && response.error) ? response.error : 'An unknown error occurred.';
             submitBtn.disabled = false;
@@ -572,34 +551,11 @@ function injectModal(payload) {
     }
   });
 
-  // Card header: title only (close button is on the wrapper, see below)
-  const header = document.createElement('div');
-  header.id = 'lgs-header';
-  header.append(modalTitle);
-
-  // Wrap inner elements in the card container so .lgs-card styles apply.
+  // Card — same structure as original, with title and toolbar added
   const card = document.createElement('div');
   card.className = 'lgs-card';
-  card.append(header, toolbar, notes, spinner, status, submitBtn);
-
-  // Wrapper: position: relative anchor for the absolutely-placed close button.
-  // This keeps the × visually at the card's top-right but outside the card's
-  // own stacking context, so LeetCode's card styles cannot block pointer events.
-  const wrapper = document.createElement('div');
-  wrapper.id = 'lgs-wrapper';
-  wrapper.appendChild(card);
-  wrapper.appendChild(closeBtn);
-
-  modal.appendChild(wrapper);
-
-  // Clicking the backdrop (outside the card) closes the modal
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      e.stopPropagation();
-      closeModal();
-    }
-  });
-
+  card.append(closeBtn, modalTitle, toolbar, notes, spinner, status, submitBtn);
+  modal.appendChild(card);
   document.body.appendChild(modal);
   document.addEventListener('keydown', onKeyDown);
 }
