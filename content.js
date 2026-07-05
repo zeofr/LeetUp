@@ -425,10 +425,10 @@ function createToolbar(textarea) {
   toolbar.id = 'lgs-toolbar';
 
   const BUTTONS = [
-    { label: 'B',        title: 'Bold',             wrap: ['**', '**'],       placeholder: 'text' },
-    { label: '`code`',   title: 'Inline Code',       wrap: ['`', '`'],         placeholder: 'code' },
-    { label: '```',      title: 'Fenced Code Block', wrap: ['```\n', '\n```'], placeholder: 'code' },
-    { label: '- list',   title: 'Bullet List',       wrap: ['- ', ''],         placeholder: 'item' },
+    { label: 'B',         title: 'Bold',             wrap: ['**', '**'],       placeholder: 'text' },
+    { label: '`code`',    title: 'Inline Code',       wrap: ['`', '`'],         placeholder: 'code' },
+    { label: '``` block', title: 'Fenced Code Block', wrap: ['```\n', '\n```'], placeholder: 'code' },
+    { label: '- list',    title: 'Bullet List',       wrap: ['- ', ''],         placeholder: 'item' },
   ];
 
   for (const btn of BUTTONS) {
@@ -500,12 +500,22 @@ function injectModal(payload) {
   const closeBtn = document.createElement('button');
   closeBtn.id = 'lgs-close-btn';
   closeBtn.textContent = '×';
-  closeBtn.addEventListener('click', closeModal);
+  closeBtn.type = 'button';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    closeModal();
+  });
 
   // Notes textarea — empty by default, max 10000 chars (Requirement 5.2)
   const notes = document.createElement('textarea');
   notes.id = 'lgs-notes';
   notes.maxLength = 10000;
+
+  // Modal title
+  const modalTitle = document.createElement('div');
+  modalTitle.id = 'lgs-modal-title';
+  modalTitle.textContent = '📝 Add Notes (Optional)';
 
   // Markdown formatting toolbar
   const toolbar = createToolbar(notes);
@@ -562,12 +572,26 @@ function injectModal(payload) {
     }
   });
 
+  // Card header: title + close button in a row
+  const header = document.createElement('div');
+  header.id = 'lgs-header';
+  header.append(modalTitle, closeBtn);
+
   // Wrap inner elements in the card container so .lgs-card styles apply.
   // The root #lgs-modal remains the full-viewport overlay.
   const card = document.createElement('div');
   card.className = 'lgs-card';
-  card.append(closeBtn, toolbar, notes, spinner, status, submitBtn);
+  card.append(header, toolbar, notes, spinner, status, submitBtn);
   modal.appendChild(card);
+
+  // Clicking the backdrop (outside the card) closes the modal
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      e.stopPropagation();
+      closeModal();
+    }
+  });
+
   document.body.appendChild(modal);
   document.addEventListener('keydown', onKeyDown);
 }

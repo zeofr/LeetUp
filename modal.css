@@ -28,7 +28,7 @@
    and a flex column layout with consistent gap between children.
    ----------------------------------------------------------------------- */
 .lgs-card {
-  background: #fff;
+  background: #ffffff;
   border-radius: 8px;
   padding: 24px;
   min-width: 420px;
@@ -38,11 +38,99 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  color: #1f2328;
+}
+
+/* -----------------------------------------------------------------------
+   Card header row — title on the left, close button on the right
+   ----------------------------------------------------------------------- */
+#lgs-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#lgs-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2328;
+  margin: 0;
+}
+
+/* -----------------------------------------------------------------------
+   Close button
+   Sits in the header row, right-aligned.
+   ----------------------------------------------------------------------- */
+#lgs-close-btn {
+  background: none;
+  background-color: transparent;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  color: #57606a;
+  display: block;
+  position: relative;
+  z-index: 1000001;
+}
+
+#lgs-close-btn:hover {
+  color: #1f2328;
+  background: none;
+  background-color: transparent;
+}
+
+/* -----------------------------------------------------------------------
+   Markdown formatting toolbar label
+   ----------------------------------------------------------------------- */
+#lgs-toolbar-label {
+  font-size: 11px;
+  color: #57606a;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* -----------------------------------------------------------------------
+   Markdown formatting toolbar — strip of shortcut buttons
+   ----------------------------------------------------------------------- */
+#lgs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lgs-toolbar-btn {
+  background: #f6f8fa;
+  background-color: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: monospace, sans-serif;
+  cursor: pointer;
+  line-height: 1.4;
+  color: #24292f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.lgs-toolbar-btn:hover {
+  background: #e1e4e8;
+  background-color: #e1e4e8;
+  border-color: #bcc0c4;
+  color: #1f2328;
 }
 
 /* -----------------------------------------------------------------------
    Notes textarea
-   Full-width with a reasonable minimum height, monospace font, and a
+   Full-width with a generous minimum height, monospace font, and a
    visible border. Vertical resize allowed; box-sizing ensures padding is
    included within the declared width.
    ----------------------------------------------------------------------- */
@@ -56,6 +144,9 @@
   border: 1px solid #d0d7de;
   border-radius: 6px;
   padding: 8px;
+  color: #1f2328;
+  background: #ffffff;
+  background-color: #ffffff;
 }
 
 /* -----------------------------------------------------------------------
@@ -67,71 +158,39 @@
 }
 
 /* -----------------------------------------------------------------------
+   Status / error message area
+   ----------------------------------------------------------------------- */
+#lgs-status {
+  font-size: 13px;
+  color: #333333;
+  min-height: 18px;
+}
+
+/* -----------------------------------------------------------------------
    Submit button
    Primary action button — green background, white text, bold label.
    ----------------------------------------------------------------------- */
 #lgs-submit-btn {
   background: #2ea44f;
-  color: #fff;
+  background-color: #2ea44f;
+  color: #ffffff;
   border: none;
-  padding: 8px 16px;
+  padding: 10px 16px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#lgs-submit-btn:hover {
+  background: #2c974b;
+  background-color: #2c974b;
 }
 
 /* Disabled state — reduced opacity, not-allowed cursor. */
 #lgs-submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-/* -----------------------------------------------------------------------
-   Close button
-   No visible background or border; aligned to the flex-end of the card.
-   ----------------------------------------------------------------------- */
-#lgs-close-btn {
-  background: none;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: #666;
-  align-self: flex-end;
-  line-height: 1;
-  padding: 0;
-}
-
-/* -----------------------------------------------------------------------
-   Status / error message area
-   ----------------------------------------------------------------------- */
-#lgs-status {
-  font-size: 13px;
-  color: #333;
-  min-height: 18px;
-}
-
-/* -----------------------------------------------------------------------
-   Markdown formatting toolbar
-   ----------------------------------------------------------------------- */
-#lgs-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.lgs-toolbar-btn {
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-family: monospace, sans-serif;
-  cursor: pointer;
-  line-height: 1.4;
-}
-
-.lgs-toolbar-btn:hover {
-  background: #e9ecef;
 }
