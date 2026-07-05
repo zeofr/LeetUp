@@ -17,6 +17,8 @@
 4. Under **Permissions → Repository permissions**, set **Contents** to **Read and write**.
 5. Click **Generate token** and copy the value — you will not see it again.
 
+> This should be a fine-grained token for the specific repository, not a classic personal access token.
+
 ### Install the Extension
 
 1. Clone or download the LeetUp repository:
@@ -35,7 +37,7 @@ git clone https://github.com/zeofr/LeetUp.git
 
 1. Click the LeetUp icon in the Chrome toolbar.
 2. Enter:
-   - **GitHub PAT** — the token you created above
+   - **GitHub fine-grained PAT** — the token you created above
    - **GitHub Username** — your GitHub username (e.g. `zeofr`)
    - **Repository Name** — just the repo name, not the full URL (e.g. `leetcode-solutions`)
 3. Click **Save**. The button briefly shows "Saved!" to confirm.
@@ -46,7 +48,7 @@ git clone https://github.com/zeofr/LeetUp.git
 2. Submit a solution.
 3. When the result shows **Accepted**, the LeetUp modal appears.
 4. Optionally add notes, then click **Push to GitHub**.
-5. Check your GitHub repository — you should see a new commit with the solution file and README.
+5. Check your GitHub repository — you should see a new commit with the solution file, README, and problem statement file.
 
 ---
 
@@ -70,7 +72,7 @@ npm install
 npm test
 ```
 
-Expected output: 12 test suites, 264 tests, all passing.
+Expected output: 13 test suites, 274 tests, all passing.
 
 ### Project Structure
 

@@ -1,146 +1,140 @@
 # LeetUp
 
-A Chrome extension that automatically detects when you solve a LeetCode problem and pushes your solution — along with a structured README — to your GitHub repository. Zero copy-paste, zero context switching.
+LeetUp is a small Chrome extension that turns every accepted LeetCode submission into a clean little archive in your GitHub repository. It quietly handles the boring part so you can stay focused on solving.
+
+If you want a personal record of your progress that feels organised without asking you to do extra work, this is for you.
+
+## Contents
+
+- [What LeetUp does](#what-leetup-does)
+- [Why it feels useful](#why-it-feels-useful)
+- [Quick start](#quick-start)
+- [How your repository will look](#how-your-repository-will-look)
+- [Security and privacy](#security-and-privacy)
+- [For developers](#for-developers)
 
 ---
 
-## Why This Was Built — STAR
+## What LeetUp does
 
-**Situation**
-After grinding LeetCode daily, keeping a personal archive of accepted solutions was a manual chore: copy code, open GitHub, navigate to the right folder, paste, write a commit message, repeat. After a few weeks the habit broke and the archive fell behind.
+When you solve a problem and LeetCode shows that you were accepted, LeetUp opens a small modal and helps you save the moment in a simple, readable way.
 
-**Task**
-Build a frictionless system that captures accepted submissions at the moment they happen, organises them by domain and topic, and pushes them to GitHub automatically — without ever leaving the LeetCode tab.
+It will:
 
-**Action**
-Built a Manifest V3 Chrome extension with three components working together:
+- capture the problem details and your solution code,
+- let you add a few notes about your approach,
+- push your solution, a generated README, and the problem statement into your GitHub repository.
 
-- A **content script** that attaches a `MutationObserver` to the submission result panel. The moment the page shows "Accepted", it scrapes the problem number, title, language, topic tag, and code directly from the DOM, then shows a lightweight modal for optional notes.
-- A **background service worker** that receives the payload, generates a Markdown README with the problem description and any notes, then pushes both the solution file and the README to GitHub via the Contents API — solution first, README second, aborting cleanly on any error.
-- A **popup** for one-time credential setup (GitHub Personal Access Token, username, and target repository), stored securely in `chrome.storage.local`.
-
-**Result**
-Every accepted submission is committed to GitHub in a consistent folder structure (`domain/topic/NNNN-problem-slug/`) within seconds. The archive builds itself passively, and 264 automated tests (unit, integration, and property-based) verify every behavioural invariant from scraping accuracy to PAT security.
+No copy-paste. No tab switching. Just solve, confirm, and save.
 
 ---
 
-## Features
+## Why it feels useful
 
-- Detects "Accepted" verdict automatically via `MutationObserver`
-- Scrapes problem number, title, language, topic tag, and your solution code from the page
-- Optional notes field in the modal — appear under **💡 My Approach** in the README
-- Organises solutions by domain (`dsa`, `sql-databases`, `future-explorations`) and topic tag
-- Creates or updates both the solution file and a `README.md` per problem
-- Handles SPA navigation — reattaches the observer when you move between problems
-- PAT is stored only in `chrome.storage.local` and never appears in URLs, request bodies, or error messages
+LeetUp is built for people who want to keep a thoughtful archive of their work without making it feel like a chore.
+
+You get:
+
+- a neat record of accepted solutions,
+- a simple README for each problem,
+- a repository that grows naturally as you practice,
+- a calm, lightweight experience that stays out of your way.
 
 ---
 
-## Folder Structure in Your GitHub Repo
+## Quick start
 
-```
+### 1. Install the extension
+
+Clone or download this project, then load it into Chrome as an unpacked extension.
+
+![Setup step 1](./docs/images/setup-1.png)
+
+1. Open Chrome and go to `chrome://extensions`.
+2. Turn on Developer mode.
+3. Click Load unpacked and select the LeetUp folder.
+
+### 2. Create a GitHub access token
+
+LeetUp uses a GitHub Fine-Grained Personal Access Token to push your work into your repository.
+
+If you need help creating one, GitHub has a straightforward guide here:
+https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token#creating-a-fine-grained-personal-access-token
+
+For a simpler way, check this out: [Create a fine-grained PAT](https://github.com/settings/tokens).
+When you create the token, choose the repository(choose a specific repository) you want LeetUp to use, for Example "LeetcodeGrind" repository and grant it "Contents: Read and write access".
+
+![Setup step 2](./docs/images/setup-2.png)
+
+### 3. Save your credentials
+
+Open the extension popup and add:
+
+- your GitHub fine-grained PAT,
+- your GitHub username,
+- the name of the repository you want to use.
+
+![Setup step 3a](./docs/images/setup-3a.png)
+![Setup step 3b](./docs/images/setup-3b.png)
+
+### 4. Try it on a real problem
+
+Open any LeetCode problem, solve it, and submit your answer.
+
+When the result says Accepted, LeetUp will appear with a small notes box. Add anything you want to remember(Optional) and click Submit & Push to GitHub.
+
+![Setup step 4](./docs/images/setup-4.png)
+
+### 5. See your archive grow
+
+After a successful push, you will find a folder for that problem in your repository with the files LeetUp created.
+
+---
+
+## How your repository will look
+
+Each accepted submission creates a small folder like this:
+
+```text
 dsa/
-  array/
-    0001-two-sum/
-      solution.js
-      README.md
-  dynamic-programming/
-    0070-climbing-stairs/
-      solution.py
-      README.md
-sql-databases/
-  database/
-    0175-combine-two-tables/
-      solution.sql
-      README.md
-future-explorations/
-  shell/
-    0195-tenth-line/
-      solution.sh
-      README.md
+  0001-two-sum/
+    solution.py
+    README.md
+    problem_statement.md
 ```
 
----
-
-## Installation
-
-LeetUp is loaded as an unpacked extension in Developer Mode — it is not published to the Chrome Web Store.
-
-### Prerequisites
-
-- Google Chrome (or any Chromium-based browser)
-- A GitHub account with a repository you want to push solutions to
-- A GitHub **Fine-Grained Personal Access Token** with **Contents: Read and Write** permission on that repository
-
-### Steps
-
-1. Clone or download this repository.
-
-```bash
-git clone https://github.com/zeofr/LeetUp.git
-```
-
-2. Open Chrome and navigate to `chrome://extensions`.
-
-3. Enable **Developer mode** (toggle in the top-right corner).
-
-4. Click **Load unpacked** and select the `LeetUp` folder.
-
-5. The LeetUp icon appears in your toolbar. Click it to open the configuration popup.
-
-6. Enter your credentials and click **Save**:
-   - **PAT** — your GitHub Fine-Grained Personal Access Token
-   - **Username** — your GitHub username
-   - **Repo** — the target repository name (e.g. `leetcode-solutions`)
+The README includes the problem title, your notes, and the problem description when it is available.
 
 ---
 
-## Usage
+## Security and privacy
 
-1. Go to any LeetCode problem page (`leetcode.com/problems/...`).
-2. Write your solution and submit it.
-3. When the verdict shows **Accepted**, the LeetUp modal appears automatically.
-4. Optionally add notes about your approach, then click **Push to GitHub**.
-5. LeetUp commits your solution and a README to your repository.
+This extension does not use an OAuth popup flow or a third-party auth service to act on your GitHub account. Instead, it uses a fine-grained personal access token that you provide yourself and stores it locally in Chrome.
 
-The modal can be dismissed at any time with the **✕** button or the **Escape** key.
+That means:
+
+- there is no browser-based OAuth redirect or delegated login flow,
+- the extension is not asking GitHub to grant broad access on your behalf,
+- your token is kept in the browser's local storage area for the extension and is only used for the GitHub API requests that push your saved solutions.
+
+LeetUp is also careful with your credentials:
+
+- your GitHub token is stored locally in Chrome,
+- it is only sent to GitHub when a push is made,
+- sensitive error messages are cleaned up before they are shown.
 
 ---
 
-## Development
+## For developers
 
-Install dependencies (dev only — Jest and fast-check for testing):
+If you want to work on the project locally, the setup is simple:
 
 ```bash
 npm install
-```
-
-Run the full test suite:
-
-```bash
 npm test
 ```
 
-264 tests across 12 suites covering unit, integration, and property-based tests.
-
----
-
-## What Gets Committed to GitHub (the target repo)
-
-Each accepted submission results in two files under `domain/topic/NNNN-problem-slug/`:
-
-| File | Contents |
-|---|---|
-| `solution.<ext>` | Your accepted code exactly as it appears in the editor |
-| `README.md` | Problem title, optional approach notes, and the problem description |
-
----
-
-## Security Notes
-
-- Your PAT is stored in `chrome.storage.local` only — never synced via `chrome.storage.sync`.
-- The PAT is sent exclusively in the `Authorization: Bearer` header — never in URLs or request bodies.
-- If a GitHub API error message contains your PAT, it is automatically redacted before being shown in the UI.
+The current test suite covers the core behavior and keeps the extension grounded as it evolves.
 
 ---
 
