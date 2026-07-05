@@ -481,12 +481,13 @@ function injectModal(payload) {
   modal.id = 'lgs-modal';
   modal.setAttribute('data-payload', JSON.stringify(payload));
 
+  // Loading spinner — declared FIRST so closeModal can reference it without error
+  const spinner = document.createElement('div');
+  spinner.id = 'lgs-spinner';
+  spinner.style.display = 'none';
+
   const closeModal = () => {
-    // Requirement 5.10: if the spinner is visible (submit in progress), cancel
-    // the UI state by hiding the spinner first. Do NOT send a duplicate message.
-    if (spinner.style.display !== 'none') {
-      spinner.style.display = 'none';
-    }
+    // modal.remove() removes the whole card including the spinner — no need to hide it.
     modal.remove();
     isModalOpen = false;
     document.removeEventListener('keydown', onKeyDown);
@@ -519,11 +520,6 @@ function injectModal(payload) {
 
   // Markdown formatting toolbar
   const toolbar = createToolbar(notes);
-
-  // Loading spinner — hidden by default (Requirement 5.4)
-  const spinner = document.createElement('div');
-  spinner.id = 'lgs-spinner';
-  spinner.style.display = 'none';
 
   // Status/error message display area
   const status = document.createElement('div');
