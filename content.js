@@ -61,26 +61,29 @@ const BASH_LANGUAGES = new Set(['bash']);
 
 /**
  * Classifies a submission language into one of three repository top-level
- * domains: "sql-databases", "future-explorations", or "dsa".
+ * domains: "sql-databases", "shell-scripting", or "dsa".
  *
  * Input is normalized via .trim().toLowerCase() before classification:
  *  - "mysql", "ms sql server", "oracle" → "sql-databases"
- *  - "bash"                             → "future-explorations"
+ *  - "bash"                             → "shell-scripting"
  *  - everything else                    → "dsa"
  *
  * Requirements: 4.1, 4.2, 4.3
  *
  * @param {string} language - The submission language label from LeetCode.
- * @returns {"dsa"|"sql-databases"|"future-explorations"} Domain string.
+ * @returns {"dsa"|"sql-databases"|"shell-scripting"} Domain string.
  */
 function getDomain(language) {
   const normalized = language.trim().toLowerCase();
   if (SQL_LANGUAGES.has(normalized)) {
+    console.info('[LeetUp] domain: sql-databases (language: ' + normalized + ')');
     return 'sql-databases';
   }
   if (BASH_LANGUAGES.has(normalized)) {
-    return 'future-explorations';
+    console.info('[LeetUp] domain: shell-scripting (language: ' + normalized + ')');
+    return 'shell-scripting';
   }
+  console.info('[LeetUp] domain: dsa (language: ' + normalized + ')');
   return 'dsa';
 }
 
@@ -119,6 +122,34 @@ function buildRepoPath(domain, topicSlug, problemNumber, problemSlug) {
   const paddedNumber = String(Number(problemNumber)).padStart(4, '0');
 
   return `${domain}/${topicSlug}/${paddedNumber}-${problemSlug}/`;
+}
+
+// ---------------------------------------------------------------------------
+// Topic Slug Fallback (Requirement 4.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derives a best-effort topic slug from the problem slug when the LeetCode
+ * topic tag is not available in the DOM (e.g. hidden behind a toggle).
+ *
+ * Checks a list of known common prefixes, then falls back to the first
+ * hyphen-separated segment, or "uncategorized" as a last resort.
+ *
+ * @param {string} problemSlug - Kebab-case problem identifier (e.g. "two-sum").
+ * @returns {string} A topic slug string.
+ */
+function deriveTopicSlugFallback(problemSlug) {
+  const KNOWN_PREFIXES = ['array', 'string', 'tree', 'graph', 'linked-list', 'binary', 'dynamic', 'stack', 'queue', 'hash'];
+  for (const prefix of KNOWN_PREFIXES) {
+    if (problemSlug.startsWith(prefix)) {
+      return prefix;
+    }
+  }
+  const firstSegment = problemSlug.split('-')[0];
+  if (firstSegment && firstSegment.length > 2) {
+    return firstSegment;
+  }
+  return 'uncategorized';
 }
 
 // ---------------------------------------------------------------------------
@@ -328,10 +359,10 @@ function scrapeSubmission() {
   }
   if (!topicSlug) {
     // LeetCode hides topic tags behind a toggle by default — they are often
-    // not in the DOM at submission time. Fall back to "uncategorized" so the
-    // push is not silently aborted just because tags are hidden.
-    console.warn('[LeetUp] scrapeSubmission: topicSlug not found, using "uncategorized"');
-    topicSlug = 'uncategorized';
+    // not in the DOM at submission time. Fall back to deriveTopicSlugFallback
+    // so the push is not silently aborted just because tags are hidden.
+    console.warn('[LeetUp] scrapeSubmission: topicSlug not found, using fallback');
+    topicSlug = deriveTopicSlugFallback(problemSlug);
   }
   if (!problemNumber) {
     // Already checked above, but kept for defensive completeness
@@ -357,6 +388,60 @@ function scrapeSubmission() {
     code,
     description,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Markdown Toolbar Helpers (Fix 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Inserts markdown syntax around selected text (or a placeholder) in a textarea.
+ *
+ * @param {HTMLTextAreaElement} textarea - The notes textarea element.
+ * @param {[string, string]} param1 - [prefix, suffix] strings to wrap around selection.
+ * @param {string} placeholder - Text to use when nothing is selected.
+ */
+function insertMarkdown(textarea, [prefix, suffix], placeholder) {
+  const start = textarea.selectionStart;
+  const end   = textarea.selectionEnd;
+  const selected = textarea.value.substring(start, end) || placeholder;
+  const insertion = prefix + selected + suffix;
+  textarea.value = textarea.value.substring(0, start) + insertion + textarea.value.substring(end);
+  const newPos = start + insertion.length;
+  textarea.selectionStart = newPos;
+  textarea.selectionEnd   = newPos;
+  textarea.focus();
+}
+
+/**
+ * Creates a markdown formatting toolbar with Bold, Inline Code, Fenced Code Block,
+ * and Bullet List buttons. Each button calls insertMarkdown on click.
+ *
+ * @param {HTMLTextAreaElement} textarea - The notes textarea element to target.
+ * @returns {HTMLDivElement} The toolbar div element.
+ */
+function createToolbar(textarea) {
+  const toolbar = document.createElement('div');
+  toolbar.id = 'lgs-toolbar';
+
+  const BUTTONS = [
+    { label: 'B',        title: 'Bold',             wrap: ['**', '**'],       placeholder: 'text' },
+    { label: '`code`',   title: 'Inline Code',       wrap: ['`', '`'],         placeholder: 'code' },
+    { label: '```',      title: 'Fenced Code Block', wrap: ['```\n', '\n```'], placeholder: 'code' },
+    { label: '- list',   title: 'Bullet List',       wrap: ['- ', ''],         placeholder: 'item' },
+  ];
+
+  for (const btn of BUTTONS) {
+    const el = document.createElement('button');
+    el.className = 'lgs-toolbar-btn';
+    el.type = 'button';
+    el.textContent = btn.label;
+    el.title = btn.title;
+    el.addEventListener('click', () => insertMarkdown(textarea, btn.wrap, btn.placeholder));
+    toolbar.appendChild(el);
+  }
+
+  return toolbar;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,6 +507,9 @@ function injectModal(payload) {
   notes.id = 'lgs-notes';
   notes.maxLength = 10000;
 
+  // Markdown formatting toolbar
+  const toolbar = createToolbar(notes);
+
   // Loading spinner — hidden by default (Requirement 5.4)
   const spinner = document.createElement('div');
   spinner.id = 'lgs-spinner';
@@ -462,9 +550,7 @@ function injectModal(payload) {
             // Success: hide spinner, show success message, remove modal after 2000ms (Requirement 5.7)
             spinner.style.display = 'none';
             status.textContent = 'Pushed successfully!';
-            setTimeout(() => {
-              closeModal();
-            }, 2000);
+            setTimeout(closeModal, 2000);
           } else {
             // Error: hide spinner, display error, re-enable button (Requirement 5.8)
             spinner.style.display = 'none';
@@ -480,7 +566,7 @@ function injectModal(payload) {
   // The root #lgs-modal remains the full-viewport overlay.
   const card = document.createElement('div');
   card.className = 'lgs-card';
-  card.append(closeBtn, notes, spinner, status, submitBtn);
+  card.append(closeBtn, toolbar, notes, spinner, status, submitBtn);
   modal.appendChild(card);
   document.body.appendChild(modal);
   document.addEventListener('keydown', onKeyDown);
@@ -689,8 +775,11 @@ if (typeof module !== 'undefined' && module.exports) {
     LANG_MAP,
     getFileExtension,
     getDomain,
+    deriveTopicSlugFallback,
     buildRepoPath,
     scrapeSubmission,
+    insertMarkdown,
+    createToolbar,
     injectModal,
     attachObserver,
     reconnectObserver,

@@ -15,6 +15,19 @@ function toBase64(str) {
   return btoa(unescape(encodeURIComponent(str)));
 }
 
+const PROBLEM_STATEMENT_PLACEHOLDER = '<!-- Problem description unavailable. -->';
+
+/**
+ * Returns the problem description if non-empty after trimming, or the
+ * placeholder string if the description is missing or blank.
+ *
+ * @param {string} description - The problem description text.
+ * @returns {string} Non-empty description or PROBLEM_STATEMENT_PLACEHOLDER.
+ */
+function generateProblemStatement(description) {
+  return (description && description.trim()) ? description : PROBLEM_STATEMENT_PLACEHOLDER;
+}
+
 /**
  * Generates the README.md content for a problem folder.
  *
@@ -251,7 +264,30 @@ async function pushSubmission(payload, _credentials = null) {
     return { ok: false, error: sanitizeError(readmeResult.error, pat) };
   }
 
-  // --- 11. Both PUTs succeeded ---
+  // --- 11. Build problem_statement.md path ---
+  const problemStatementPath = `${payload.domain}/${payload.topicSlug}/${payload.problemNumber}-${payload.problemSlug}/problem_statement.md`;
+
+  // --- 12. GET SHA for problem_statement.md ---
+  const psShaResult = await getFileSha(baseUrl + problemStatementPath, pat);
+  if (psShaResult.error) {
+    return { ok: false, error: sanitizeError(psShaResult.error, pat) };
+  }
+  const psSha = psShaResult.sha;
+
+  // --- 13. Build problem_statement PUT body ---
+  const psBody = {
+    message: `Add solution for ${payload.problemNumber}. ${payload.problemTitle}`,
+    content: toBase64(generateProblemStatement(payload.description)),
+    ...(psSha ? { sha: psSha } : {}),
+  };
+
+  // --- 14. PUT problem_statement.md ---
+  const psResult = await putFile(baseUrl + problemStatementPath, pat, psBody);
+  if (!psResult.ok) {
+    return { ok: false, error: sanitizeError(psResult.error, pat) };
+  }
+
+  // --- 15. All three files pushed successfully ---
   return { ok: true };
 }
 
@@ -269,5 +305,5 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 
 // Export for Node/Jest compatibility (not available in browser service worker context)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { toBase64, generateReadme, sanitizeError, getFileSha, putFile, pushSubmission };
+  module.exports = { toBase64, generateReadme, generateProblemStatement, PROBLEM_STATEMENT_PLACEHOLDER, sanitizeError, getFileSha, putFile, pushSubmission };
 }

@@ -25,7 +25,7 @@ const BASH_LANGUAGES = ['bash'];
 const allLanguages = [...new Set([...langMapKeys, ...SQL_LANGUAGES, ...BASH_LANGUAGES])];
 
 // Valid domain values
-const VALID_DOMAINS = new Set(['dsa', 'sql-databases', 'future-explorations']);
+const VALID_DOMAINS = new Set(['dsa', 'sql-databases', 'shell-scripting']);
 
 // ---------------------------------------------------------------------------
 // Property 6: Domain classification is total and correct
@@ -60,12 +60,12 @@ describe('getDomain — Property 6: Domain classification is total and correct',
     );
   });
 
-  test('Bash always maps to "future-explorations"', () => {
+  test('Bash always maps to "shell-scripting"', () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...BASH_LANGUAGES),
         (language) => {
-          return getDomain(language) === 'future-explorations';
+          return getDomain(language) === 'shell-scripting';
         }
       ),
       { numRuns: 100 }
@@ -94,9 +94,9 @@ describe('getDomain — Property 6: Domain classification is total and correct',
         fc.constantFrom(...allLanguages),
         (language) => {
           const domain = getDomain(language);
-          const isSql  = domain === 'sql-databases';
-          const isBash = domain === 'future-explorations';
-          const isDsa  = domain === 'dsa';
+          const isSql   = domain === 'sql-databases';
+          const isBash  = domain === 'shell-scripting';
+          const isDsa   = domain === 'dsa';
           // Exactly one must be true
           const count = [isSql, isBash, isDsa].filter(Boolean).length;
           return count === 1;
@@ -402,7 +402,7 @@ describe('injectModal — Property 10: Push message payload contains all require
             problemNumber:  fc.string({ minLength: 1 }),
             problemSlug:    fc.string({ minLength: 1 }),
             problemTitle:   fc.string(),
-            domain:         fc.constantFrom('dsa', 'sql-databases', 'future-explorations'),
+            domain:         fc.constantFrom('dsa', 'sql-databases', 'shell-scripting'),
             topicSlug:      fc.string({ minLength: 1 }),
             language:       fc.string({ minLength: 1 }),
             fileExtension:  fc.string({ minLength: 1 }),

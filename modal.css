@@ -32,7 +32,7 @@
   border-radius: 8px;
   padding: 24px;
   min-width: 420px;
-  max-width: 600px;
+  max-width: 680px;
   width: 90%;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   display: flex;
@@ -48,7 +48,7 @@
    ----------------------------------------------------------------------- */
 #lgs-notes {
   width: 100%;
-  min-height: 120px;
+  min-height: 200px;
   font-family: monospace, sans-serif;
   font-size: 13px;
   resize: vertical;
@@ -109,4 +109,29 @@
   font-size: 13px;
   color: #333;
   min-height: 18px;
+}
+
+/* -----------------------------------------------------------------------
+   Markdown formatting toolbar
+   ----------------------------------------------------------------------- */
+#lgs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.lgs-toolbar-btn {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: monospace, sans-serif;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.lgs-toolbar-btn:hover {
+  background: #e9ecef;
 }
