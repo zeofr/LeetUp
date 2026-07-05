@@ -509,11 +509,24 @@ function injectModal(payload) {
     if (e.key === 'Escape') closeModal();
   };
 
-  // Close button — simple direct listener, same as original working code
+  // Close button — use capture phase to intercept before React's synthetic
+  // event system, and stop propagation so LeetCode's own handlers don't interfere.
   const closeBtn = document.createElement('button');
   closeBtn.id = 'lgs-close-btn';
   closeBtn.textContent = '×';
-  closeBtn.addEventListener('click', closeModal);
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    closeModal();
+  }, true /* capture */);
+
+  // Also close when clicking the backdrop (outside the card)
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      e.stopPropagation();
+      closeModal();
+    }
+  }, true /* capture */);
 
   // Modal title
   const modalTitle = document.createElement('div');
@@ -649,6 +662,71 @@ if (typeof window !== 'undefined') {
 let isModalOpen = false;
 
 /**
+ * Boolean flag that indicates the user has clicked the LeetCode Submit button
+ * and a submission result is expected. The observer will only fire injectModal()
+ * when this flag is true, preventing false positives from existing "Accepted"
+ * status text rendered during page load (e.g. previous submission history).
+ *
+ * Set to true when a click on LeetCode's submit button is detected.
+ * Reset to false after the modal fires or after a 15-second safety timeout.
+ *
+ * @type {boolean}
+ */
+let pendingSubmission = false;
+
+/**
+ * Holds the setTimeout handle for resetting pendingSubmission after 15 seconds.
+ * Cleared when the modal fires so we don't reset the flag twice.
+ *
+ * @type {ReturnType<typeof setTimeout>|null}
+ */
+let pendingSubmissionTimeout = null;
+
+/**
+ * Resets the pendingSubmission flag and clears its safety timeout.
+ */
+function clearPendingSubmission() {
+  pendingSubmission = false;
+  if (pendingSubmissionTimeout !== null) {
+    clearTimeout(pendingSubmissionTimeout);
+    pendingSubmissionTimeout = null;
+  }
+}
+
+/**
+ * Attaches a capture-phase click listener to document that watches for clicks
+ * on LeetCode's "Submit" button. When detected, sets pendingSubmission = true
+ * and arms a 15-second safety timeout to reset it.
+ *
+ * LeetCode renders its submit button as a button element whose text contains
+ * "Submit" (case-insensitive). We use capture phase so React's synthetic event
+ * system cannot stop propagation before we see it.
+ */
+function attachSubmitClickListener() {
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!target) return;
+
+    // Walk up to 3 levels to find a button (click may land on inner span/icon)
+    let el = target;
+    for (let i = 0; i < 3; i++) {
+      if (!el) break;
+      const tag  = el.tagName && el.tagName.toLowerCase();
+      const text = el.textContent && el.textContent.trim().toLowerCase();
+      if (tag === 'button' && text === 'submit') {
+        // LeetCode submit button clicked — arm the observer
+        pendingSubmission = true;
+        if (pendingSubmissionTimeout !== null) clearTimeout(pendingSubmissionTimeout);
+        pendingSubmissionTimeout = setTimeout(clearPendingSubmission, 15000);
+        console.info('[LeetUp] Submit button clicked — observer armed');
+        break;
+      }
+      el = el.parentElement;
+    }
+  }, true /* capture phase */);
+}
+
+/**
  * Attaches a MutationObserver to detect "Accepted" verdicts on LeetCode.
  *
  * LeetCode is a React SPA — the submission result panel
@@ -698,6 +776,11 @@ function attachObserver() {
     // Skip if the modal is already open — guard against duplicate triggers.
     if (isModalOpen) return;
 
+    // Only fire if the user actually clicked Submit. This prevents the observer
+    // from triggering on "Accepted" text rendered from existing submission history
+    // when the user navigates to a problem they have already solved.
+    if (!pendingSubmission) return;
+
     let accepted = false;
 
     for (const mutation of mutations) {
@@ -727,6 +810,9 @@ function attachObserver() {
 
     if (!accepted) return;
 
+    // Disarm the pending flag — we got the result we were waiting for.
+    clearPendingSubmission();
+
     // Attempt to scrape — abort silently (errors already logged by scrapeSubmission).
     const payload = scrapeSubmission();
     if (!payload) return;
@@ -750,6 +836,7 @@ function attachObserver() {
 // the observer is active as soon as the content script is injected.
 // ---------------------------------------------------------------------------
 if (typeof module === 'undefined') {
+  attachSubmitClickListener();
   activeObserver = attachObserver();
   startUrlPolling();
 }
@@ -770,11 +857,15 @@ if (typeof module !== 'undefined' && module.exports) {
     createToolbar,
     injectModal,
     attachObserver,
+    attachSubmitClickListener,
     reconnectObserver,
     startUrlPolling,
     // Export getter/setter for isModalOpen so tests can inspect and reset it.
     get isModalOpen() { return isModalOpen; },
     set isModalOpen(v) { isModalOpen = v; },
+    // Export getter/setter for pendingSubmission so tests can inspect and reset it.
+    get pendingSubmission() { return pendingSubmission; },
+    set pendingSubmission(v) { pendingSubmission = v; },
     // Export getter/setter for currentUrl so tests can inspect and reset it.
     get currentUrl() { return currentUrl; },
     set currentUrl(v) { currentUrl = v; },

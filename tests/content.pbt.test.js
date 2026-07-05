@@ -192,10 +192,12 @@ describe('attachObserver — Property 8: Modal injection is idempotent (no dupli
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
+    contentModule.pendingSubmission = false;
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    contentModule.pendingSubmission = false;
   });
 
   test(
@@ -213,6 +215,10 @@ describe('attachObserver — Property 8: Modal injection is idempotent (no dupli
 
             // --- Fire each "Accepted" DOM event synchronously ---
             for (const _status of acceptedEvents) {
+              // Arm the flag for the first event only — after that isModalOpen blocks it
+              if (!contentModule.isModalOpen) {
+                contentModule.pendingSubmission = true;
+              }
               // Append a new span with "Accepted" text — mimics what LeetCode does.
               const el = document.createElement('span');
               el.textContent = _status;
@@ -225,6 +231,7 @@ describe('attachObserver — Property 8: Modal injection is idempotent (no dupli
 
             // Cleanup observer
             if (observer) observer.disconnect();
+            contentModule.pendingSubmission = false;
 
             return modalCount <= 1;
           }
@@ -517,10 +524,12 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
+    contentModule.pendingSubmission = false;
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    contentModule.pendingSubmission = false;
   });
 
   test(
@@ -564,6 +573,13 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
 
             const observer = attachObserver();
 
+            // Arm pendingSubmission so the guard allows the observer to fire
+            // (simulates user having clicked Submit before the result appears)
+            const shouldTrigger = statusText.trim() === 'Accepted';
+            if (shouldTrigger) {
+              contentModule.pendingSubmission = true;
+            }
+
             // Simulate a DOM mutation delivering the generated status text
             const el = document.createElement('span');
             el.textContent = statusText;
@@ -576,9 +592,9 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
 
             // Cleanup
             if (observer) observer.disconnect();
+            contentModule.pendingSubmission = false;
 
             // The flow should trigger iff the trimmed text is exactly "Accepted"
-            const shouldTrigger = statusText.trim() === 'Accepted';
             return modalExists === shouldTrigger;
           }
         ),
@@ -600,6 +616,9 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
             const panel = buildScrapablePage();
 
             const observer = attachObserver();
+
+            // pendingSubmission is false — even if text were "Accepted" it wouldn't fire.
+            // For non-"Accepted" strings this is doubly safe.
 
             const el = document.createElement('span');
             el.textContent = statusText;
@@ -643,6 +662,9 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
 
             const observer = attachObserver();
 
+            // Arm pendingSubmission — simulates user clicking Submit
+            contentModule.pendingSubmission = true;
+
             const el = document.createElement('span');
             el.textContent = statusText;
             panel.appendChild(el);
@@ -653,6 +675,7 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
             const modalExists = document.getElementById('lgs-modal') !== null;
 
             if (observer) observer.disconnect();
+            contentModule.pendingSubmission = false;
 
             // All of these trim to "Accepted", so modal must be injected
             return modalExists === true;

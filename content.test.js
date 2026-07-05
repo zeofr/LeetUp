@@ -126,9 +126,9 @@ describe('getDomain', () => {
     expect(getDomain('Oracle')).toBe('sql-databases');
   });
 
-  // Bash → future-explorations
-  test('classifies Bash as future-explorations', () => {
-    expect(getDomain('Bash')).toBe('future-explorations');
+  // Bash → shell-scripting
+  test('classifies Bash as shell-scripting', () => {
+    expect(getDomain('Bash')).toBe('shell-scripting');
   });
 
   // All other languages → dsa
@@ -166,11 +166,11 @@ describe('getDomain', () => {
   });
 
   test('handles lowercase bash', () => {
-    expect(getDomain('bash')).toBe('future-explorations');
+    expect(getDomain('bash')).toBe('shell-scripting');
   });
 
   test('handles uppercase BASH', () => {
-    expect(getDomain('BASH')).toBe('future-explorations');
+    expect(getDomain('BASH')).toBe('shell-scripting');
   });
 
   // Whitespace trimming
@@ -179,7 +179,7 @@ describe('getDomain', () => {
   });
 
   test('trims whitespace before classifying bash', () => {
-    expect(getDomain('  Bash  ')).toBe('future-explorations');
+    expect(getDomain('  Bash  ')).toBe('shell-scripting');
   });
 
   test('trims whitespace before classifying dsa language', () => {
@@ -193,7 +193,7 @@ describe('getDomain', () => {
 
   // Return value is always one of the three valid domains
   test('always returns one of the three valid domain strings', () => {
-    const validDomains = ['dsa', 'sql-databases', 'future-explorations'];
+    const validDomains = ['dsa', 'sql-databases', 'shell-scripting'];
     const languages = ['Python3', 'MySQL', 'MS SQL Server', 'Oracle', 'Bash',
                        'Java', 'JavaScript', 'C++', 'Go', 'Rust', 'Haskell'];
     for (const lang of languages) {
@@ -244,8 +244,8 @@ describe('buildRepoPath', () => {
     expect(buildRepoPath('sql-databases', 'database', 1, 'some-problem'))
       .toBe('sql-databases/database/0001-some-problem/');
 
-    expect(buildRepoPath('future-explorations', 'shell', 1, 'some-problem'))
-      .toBe('future-explorations/shell/0001-some-problem/');
+    expect(buildRepoPath('shell-scripting', 'shell', 1, 'some-problem'))
+      .toBe('shell-scripting/shell/0001-some-problem/');
   });
 
   test('path always ends with a trailing slash', () => {

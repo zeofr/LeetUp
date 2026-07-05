@@ -546,6 +546,10 @@ describe('pushSubmission', () => {
       // GET README → 404 (new file)
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       // PUT README → 201
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
+      // GET problem_statement.md → 404 (new file)
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      // PUT problem_statement.md → 201
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) });
 
     const result = await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
@@ -561,6 +565,10 @@ describe('pushSubmission', () => {
       // GET README → 200 with SHA
       .mockResolvedValueOnce({ status: 200, json: async () => ({ sha: 'def456' }) })
       // PUT README → 200
+      .mockResolvedValueOnce({ status: 200, json: async () => ({}) })
+      // GET problem_statement.md → 200 with SHA
+      .mockResolvedValueOnce({ status: 200, json: async () => ({ sha: 'ghi789' }) })
+      // PUT problem_statement.md → 200
       .mockResolvedValueOnce({ status: 200, json: async () => ({}) });
 
     const result = await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
@@ -658,7 +666,9 @@ describe('pushSubmission', () => {
       .mockResolvedValueOnce({ status: 200, json: async () => ({ sha: mockSha }) }) // GET solution
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })                // PUT solution
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })                // GET README
-      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });               // PUT README
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })                // PUT README
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })                // GET problem_statement
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });               // PUT problem_statement
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
 
@@ -673,7 +683,9 @@ describe('pushSubmission', () => {
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) }) // GET solution → new
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) }) // PUT solution
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) }) // GET README
-      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });// PUT README
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) }) // PUT README
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) }) // GET problem_statement
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });// PUT problem_statement
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
 
@@ -686,10 +698,12 @@ describe('pushSubmission', () => {
     const readmeSha = 'readme_sha_xyz';
 
     global.fetch
-      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })               // GET solution
-      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })               // PUT solution
-      .mockResolvedValueOnce({ status: 200, json: async () => ({ sha: readmeSha }) }) // GET README
-      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });              // PUT README
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })                  // GET solution
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })                  // PUT solution
+      .mockResolvedValueOnce({ status: 200, json: async () => ({ sha: readmeSha }) })  // GET README
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })                  // PUT README
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })                  // GET problem_statement
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });                 // PUT problem_statement
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
 
@@ -703,6 +717,8 @@ describe('pushSubmission', () => {
 
   test('solution PUT commit message matches "Add solution for {number}. {title}"', async () => {
     global.fetch
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
@@ -722,6 +738,8 @@ describe('pushSubmission', () => {
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) });
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
@@ -733,6 +751,8 @@ describe('pushSubmission', () => {
 
   test('constructs the correct README path in the GitHub API URL', async () => {
     global.fetch
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
@@ -767,6 +787,8 @@ describe('pushSubmission', () => {
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) });
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
@@ -780,6 +802,8 @@ describe('pushSubmission', () => {
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) });
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
@@ -790,15 +814,17 @@ describe('pushSubmission', () => {
 
   // ---- Total fetch call count for a full happy-path push ----
 
-  test('a full successful push issues exactly 4 fetch calls (GET sol, PUT sol, GET readme, PUT readme)', async () => {
+  test('a full successful push issues exactly 6 fetch calls (GET+PUT solution, GET+PUT readme, GET+PUT problem_statement)', async () => {
     global.fetch
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) });
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
-    expect(global.fetch).toHaveBeenCalledTimes(4);
+    expect(global.fetch).toHaveBeenCalledTimes(6);
   });
 });
 

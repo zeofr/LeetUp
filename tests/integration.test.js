@@ -138,6 +138,7 @@ describe('Integration: background handler success path', () => {
     jest.useRealTimers();
     document.body.innerHTML = '';
     contentModule.isModalOpen = false;
+    contentModule.pendingSubmission = false;
   });
 
   test('pushSubmission returns { ok: true } when both solution and README PUTs succeed', async () => {
@@ -145,7 +146,9 @@ describe('Integration: background handler success path', () => {
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })          // GET solution
       .mockResolvedValueOnce({ status: 201, json: async () => ({}) })          // PUT solution
       .mockResolvedValueOnce({ status: 404, json: async () => ({}) })          // GET README
-      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });         // PUT README
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) })          // PUT README
+      .mockResolvedValueOnce({ status: 404, json: async () => ({}) })          // GET problem_statement
+      .mockResolvedValueOnce({ status: 201, json: async () => ({}) });         // PUT problem_statement
 
     const result = await pushSubmission(
       { ...SAMPLE_PAYLOAD, notes: '' },

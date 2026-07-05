@@ -71,6 +71,7 @@ function flushMicrotasks() {
 describe('attachObserver', () => {
   beforeEach(() => {
     resetDOM();
+    contentModule.pendingSubmission = false;
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -81,16 +82,9 @@ describe('attachObserver', () => {
 
   // ---- Target panel detection ----
 
-  test('returns null and logs a warning when result panel is not in DOM', () => {
-    const observer = contentModule.attachObserver();
-    expect(observer).toBeNull();
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('submission result panel not found')
-    );
-  });
-
-  test('returns a MutationObserver instance when result panel is found', () => {
-    buildResultPanel();
+  test('returns a MutationObserver instance (observes document.body)', () => {
+    // attachObserver always uses document.body as the stable root,
+    // so it always succeeds when document.body is available.
     const observer = contentModule.attachObserver();
     expect(observer).not.toBeNull();
     expect(observer).toBeInstanceOf(MutationObserver);
@@ -107,6 +101,9 @@ describe('attachObserver', () => {
     // verify via DOM side-effect (#lgs-modal appears)
 
     const observer = contentModule.attachObserver();
+
+    // Arm the pendingSubmission flag — simulates user clicking Submit
+    contentModule.pendingSubmission = true;
 
     // Simulate LeetCode inserting "Accepted" into the result panel.
     const textNode = document.createTextNode('Accepted');
@@ -129,6 +126,9 @@ describe('attachObserver', () => {
     // So ' Accepted ' trimmed → 'Accepted' → IS a match.
     const panel = buildScrapablePage();
     const observer = contentModule.attachObserver();
+
+    // Arm the pendingSubmission flag — simulates user clicking Submit
+    contentModule.pendingSubmission = true;
 
     const textNode = document.createTextNode(' Accepted ');
     panel.appendChild(textNode);
@@ -211,7 +211,8 @@ describe('attachObserver', () => {
     const panel = buildScrapablePage();
     const observer = contentModule.attachObserver();
 
-    // First accepted trigger
+    // First accepted trigger — arm flag before first mutation
+    contentModule.pendingSubmission = true;
     const el1 = document.createElement('span');
     el1.textContent = 'Accepted';
     panel.appendChild(el1);
@@ -220,7 +221,8 @@ describe('attachObserver', () => {
     const firstModal = document.getElementById('lgs-modal');
     expect(firstModal).not.toBeNull();
 
-    // Second accepted trigger while modal is open
+    // Second accepted trigger while modal is open — re-arm but modal guard blocks it
+    contentModule.pendingSubmission = true;
     const el2 = document.createElement('span');
     el2.textContent = 'Accepted';
     panel.appendChild(el2);
@@ -243,6 +245,9 @@ describe('attachObserver', () => {
     panel.appendChild(textNode);
 
     await flushMicrotasks();
+
+    // Arm the pendingSubmission flag — simulates user clicking Submit
+    contentModule.pendingSubmission = true;
 
     // Now mutate its data to "Accepted"
     textNode.data = 'Accepted';
@@ -278,15 +283,32 @@ describe('attachObserver', () => {
     observer.disconnect();
   });
 
-  // ---- Observer targets the correct element ----
+  // ---- pendingSubmission guard — no false positives from page load ----
 
-  test('falls back to class-based result selector when e2e-locator is absent', () => {
-    const panel = document.createElement('div');
-    panel.className = 'result__abc123';
-    document.body.appendChild(panel);
+  test('does NOT inject modal when "Accepted" appears but pendingSubmission is false', async () => {
+    const panel = buildScrapablePage();
+    const observer = contentModule.attachObserver();
 
+    // pendingSubmission is false (default) — simulates existing submission history on page load
+    const el = document.createElement('span');
+    el.textContent = 'Accepted';
+    panel.appendChild(el);
+
+    await flushMicrotasks();
+
+    expect(document.getElementById('lgs-modal')).toBeNull();
+    expect(contentModule.isModalOpen).toBe(false);
+
+    observer.disconnect();
+  });
+
+  // ---- Observer targets document.body ----
+
+  test('returns a MutationObserver even when no result panel element exists', () => {
+    // attachObserver observes document.body — no specific panel needed
     const observer = contentModule.attachObserver();
     expect(observer).not.toBeNull();
+    expect(observer).toBeInstanceOf(MutationObserver);
     observer.disconnect();
   });
 });

@@ -139,12 +139,12 @@ describe('scrapeSubmission', () => {
     expect(result.domain).toBe('sql-databases');
   });
 
-  test('domain is correctly derived as future-explorations for Bash', () => {
+  test('domain is correctly derived as shell-scripting for Bash', () => {
     buildDOM({ language: 'Bash' });
     const result = scrapeSubmission();
 
     expect(result).not.toBeNull();
-    expect(result.domain).toBe('future-explorations');
+    expect(result.domain).toBe('shell-scripting');
   });
 
   test('strips leading "N. " prefix from problemTitle', () => {
@@ -186,16 +186,16 @@ describe('scrapeSubmission', () => {
 
   // ---- Required path component: topicSlug ----
 
-  test('returns null and logs error with "topicSlug" when no topic tag links exist', () => {
+  test('uses deriveTopicSlugFallback when no topic tag links exist', () => {
     buildDOM();
     document.body.querySelectorAll('a').forEach(a => a.remove());
 
     const result = scrapeSubmission();
 
-    expect(result).toBeNull();
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringContaining('topicSlug')
-    );
+    // scrapeSubmission now falls back to deriveTopicSlugFallback rather than returning null
+    expect(result).not.toBeNull();
+    expect(result.topicSlug).not.toBe('');
+    expect(result.topicSlug).not.toBeNull();
   });
 
   // ---- Required path component: problemSlug ----
