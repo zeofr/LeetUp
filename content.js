@@ -1,0 +1,700 @@
+// content.js — Content Script
+// Attaches a MutationObserver to the LeetCode submission result panel,
+// detects accepted submissions, scrapes problem data, and injects the
+// modal overlay for user notes before forwarding the push payload to
+// the background service worker.
+
+// ---------------------------------------------------------------------------
+// Language-to-Extension Mapping (Requirement 3.1)
+// ---------------------------------------------------------------------------
+
+/** @type {Map<string, string>} */
+const LANG_MAP = new Map([
+  ['python3',        '.py'],
+  ['python',         '.py'],
+  ['java',           '.java'],
+  ['javascript',     '.js'],
+  ['typescript',     '.ts'],
+  ['c++',            '.cpp'],
+  ['c',              '.c'],
+  ['c#',             '.cs'],
+  ['go',             '.go'],
+  ['rust',           '.rs'],
+  ['kotlin',         '.kt'],
+  ['swift',          '.swift'],
+  ['ruby',           '.rb'],
+  ['scala',          '.scala'],
+  ['php',            '.php'],
+  ['mysql',          '.sql'],
+  ['ms sql server',  '.sql'],
+  ['oracle',         '.sql'],
+  ['bash',           '.sh'],
+]);
+
+/**
+ * Maps a LeetCode submission language label to the corresponding file extension.
+ *
+ * The lookup is case-insensitive and whitespace-tolerant: input is trimmed and
+ * lowercased before comparison. If the language is not in LANG_MAP, returns
+ * ".txt" and emits a console warning containing the verbatim input string.
+ *
+ * Requirements: 3.1, 3.2
+ *
+ * @param {string} language - The submission language label (e.g. "Python3").
+ * @returns {string} File extension including the leading dot (e.g. ".py").
+ */
+function getFileExtension(language) {
+  const normalized = language.trim().toLowerCase();
+  if (LANG_MAP.has(normalized)) {
+    return LANG_MAP.get(normalized);
+  }
+  console.warn(`[leetcode-github-sync] Unrecognized language: ${language}`);
+  return '.txt';
+}
+
+// ---------------------------------------------------------------------------
+// Domain Classification (Requirements 4.1, 4.2, 4.3)
+// ---------------------------------------------------------------------------
+
+const SQL_LANGUAGES  = new Set(['mysql', 'ms sql server', 'oracle']);
+const BASH_LANGUAGES = new Set(['bash']);
+
+/**
+ * Classifies a submission language into one of three repository top-level
+ * domains: "sql-databases", "future-explorations", or "dsa".
+ *
+ * Input is normalized via .trim().toLowerCase() before classification:
+ *  - "mysql", "ms sql server", "oracle" → "sql-databases"
+ *  - "bash"                             → "future-explorations"
+ *  - everything else                    → "dsa"
+ *
+ * Requirements: 4.1, 4.2, 4.3
+ *
+ * @param {string} language - The submission language label from LeetCode.
+ * @returns {"dsa"|"sql-databases"|"future-explorations"} Domain string.
+ */
+function getDomain(language) {
+  const normalized = language.trim().toLowerCase();
+  if (SQL_LANGUAGES.has(normalized)) {
+    return 'sql-databases';
+  }
+  if (BASH_LANGUAGES.has(normalized)) {
+    return 'future-explorations';
+  }
+  return 'dsa';
+}
+
+// ---------------------------------------------------------------------------
+// Repository Path Construction (Requirements 4.4, 4.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Constructs the repository target path for a problem's folder.
+ *
+ * The path format is:
+ *   `{domain}/{topicSlug}/{paddedNumber}-{problemSlug}/`
+ * where `problemNumber` is zero-padded to 4 digits.
+ *
+ * Returns null and logs a console.error if any argument is falsy.
+ *
+ * Requirements: 4.4, 4.5
+ *
+ * @param {string} domain        - Top-level domain folder (e.g. "dsa").
+ * @param {string} topicSlug     - Primary topic tag slug (e.g. "array").
+ * @param {number|string} problemNumber - Numeric problem ID (e.g. 1 → "0001").
+ * @param {string} problemSlug   - Kebab-case problem identifier (e.g. "two-sum").
+ * @returns {string|null} The repository path string, or null if any arg is falsy.
+ */
+function buildRepoPath(domain, topicSlug, problemNumber, problemSlug) {
+  // Validate all required arguments — any falsy value is an error
+  const args = { domain, topicSlug, problemNumber, problemSlug };
+  for (const [name, value] of Object.entries(args)) {
+    if (!value && value !== 0) {
+      console.error(`[leetcode-github-sync] buildRepoPath: missing required argument "${name}"`);
+      return null;
+    }
+  }
+
+  // Zero-pad the problem number to 4 digits
+  const paddedNumber = String(Number(problemNumber)).padStart(4, '0');
+
+  return `${domain}/${topicSlug}/${paddedNumber}-${problemSlug}/`;
+}
+
+// ---------------------------------------------------------------------------
+// DOM Scraping (Requirements 2.4, 2.5, 2.6, 4.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scrapes the active LeetCode problem page and returns a submission payload
+ * object, or null if any required field cannot be determined.
+ *
+ * Extracted fields:
+ *  - problemNumber  {string}  4-digit zero-padded (e.g. "0001")
+ *  - problemSlug    {string}  kebab-case slug from URL (e.g. "two-sum")
+ *  - problemTitle   {string}  display title from heading (empty string fallback)
+ *  - topicSlug      {string}  primary topic tag (empty string fallback)
+ *  - language       {string}  submission language from the code editor selector
+ *  - fileExtension  {string}  derived via getFileExtension(language)
+ *  - domain         {string}  derived via getDomain(language)
+ *  - code           {string}  solution code body from the code editor
+ *  - description    {string}  official problem description (empty string fallback)
+ *
+ * Returns null (with console.error) when:
+ *  - problemNumber or code is unavailable
+ *  - any path component (domain, topicSlug, problemNumber, problemSlug) is missing
+ *
+ * Requirements: 2.4, 2.5, 2.6, 4.5
+ *
+ * @returns {Object|null} Scraped payload object or null on failure.
+ */
+function scrapeSubmission() {
+  // ------------------------------------------------------------------
+  // 1. Problem slug — derived from URL pathname
+  //    e.g. https://leetcode.com/problems/two-sum/description/
+  //         → "two-sum"
+  // ------------------------------------------------------------------
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  // pathname: ["problems", "two-sum", ...]
+  const problemSlug = (pathParts[0] === 'problems' && pathParts[1])
+    ? pathParts[1]
+    : '';
+
+  // ------------------------------------------------------------------
+  // 2. Problem number — from page <title> or breadcrumb/heading text
+  //    LeetCode titles are typically: "1. Two Sum - LeetCode"
+  //    Try <title> first, then fall back to the main problem heading.
+  // ------------------------------------------------------------------
+  let problemNumber = '';
+
+  // Attempt 1: document.title  ("1. Two Sum - LeetCode")
+  const titleMatch = document.title.match(/^(\d+)\./);
+  if (titleMatch) {
+    problemNumber = String(Number(titleMatch[1])).padStart(4, '0');
+  }
+
+  // Attempt 2: heading element inside the problem content area
+  // LeetCode renders the problem title as an <a> or heading containing "N. Title"
+  if (!problemNumber) {
+    const headingEl =
+      document.querySelector('[data-cy="question-title"]') ||
+      document.querySelector('.mr-2.text-label-1') ||
+      document.querySelector('a[href*="/problems/"] .text-title-large') ||
+      // Generic: any heading-level element whose text starts with a digit and dot
+      Array.from(document.querySelectorAll('h4, h3, h2, h1, [class*="title"]'))
+        .find(el => /^\d+\./.test(el.textContent.trim()));
+
+    if (headingEl) {
+      const m = headingEl.textContent.trim().match(/^(\d+)\./);
+      if (m) {
+        problemNumber = String(Number(m[1])).padStart(4, '0');
+      }
+    }
+  }
+
+  // Required: log error and return null if problemNumber is unavailable
+  if (!problemNumber) {
+    console.error('[leetcode-github-sync] scrapeSubmission: missing required field "problemNumber"');
+    return null;
+  }
+
+  // ------------------------------------------------------------------
+  // 3. Problem title — from heading or page title (optional, fallback '')
+  // ------------------------------------------------------------------
+  let problemTitle = '';
+
+  // Try heading selector first
+  const titleEl =
+    document.querySelector('[data-cy="question-title"]') ||
+    document.querySelector('.mr-2.text-label-1') ||
+    document.querySelector('[class*="question-title"]') ||
+    Array.from(document.querySelectorAll('h4, h3, h2, h1, [class*="title"]'))
+      .find(el => /^\d+\./.test(el.textContent.trim()));
+
+  if (titleEl) {
+    // Strip leading "N. " prefix if present
+    problemTitle = titleEl.textContent.trim().replace(/^\d+\.\s*/, '');
+  } else {
+    // Fall back to document.title: "1. Two Sum - LeetCode" → "Two Sum"
+    const docTitleMatch = document.title.match(/^\d+\.\s*(.+?)(?:\s*[-|]\s*LeetCode)?$/i);
+    if (docTitleMatch) {
+      problemTitle = docTitleMatch[1].trim();
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 4. Language — from the code editor language selector button
+  //    LeetCode renders this as a button/span inside the editor toolbar.
+  // ------------------------------------------------------------------
+  const languageEl =
+    document.querySelector('[data-cy="lang-select"] button') ||
+    document.querySelector('.ant-select-selection-item') ||
+    document.querySelector('[class*="select-trigger"] [class*="item"]') ||
+    document.querySelector('button[id*="headlessui-listbox-button"]') ||
+    document.querySelector('[class*="CodeMirror-lang"]') ||
+    // Generic: look for a button near the editor that contains a known language name
+    (() => {
+      const candidates = document.querySelectorAll('button, [role="option"], [class*="lang"]');
+      for (const el of candidates) {
+        const text = el.textContent.trim().toLowerCase();
+        if (LANG_MAP.has(text)) return el;
+      }
+      return null;
+    })();
+
+  const language = languageEl ? languageEl.textContent.trim() : '';
+
+  // ------------------------------------------------------------------
+  // 5. Code — from the Monaco/CodeMirror editor
+  //    LeetCode uses Monaco editor; the code lines are in .view-lines.
+  // ------------------------------------------------------------------
+  let code = '';
+
+  // Monaco editor lines
+  const monacoLines = document.querySelectorAll('.view-lines .view-line');
+  if (monacoLines.length > 0) {
+    code = Array.from(monacoLines)
+      .map(line => line.textContent)
+      .join('\n');
+  }
+
+  // CodeMirror fallback
+  if (!code) {
+    const cmContent = document.querySelector('.CodeMirror-code');
+    if (cmContent) {
+      code = Array.from(cmContent.querySelectorAll('.CodeMirror-line'))
+        .map(line => line.textContent)
+        .join('\n');
+    }
+  }
+
+  // Required: log error and return null if code is unavailable
+  if (!code) {
+    console.error('[leetcode-github-sync] scrapeSubmission: missing required field "code"');
+    return null;
+  }
+
+  // ------------------------------------------------------------------
+  // 6. Topic slug — from the first topic tag link on the page
+  //    LeetCode renders topic tags as links like /tag/array/
+  // ------------------------------------------------------------------
+  let topicSlug = '';
+
+  const topicEl =
+    document.querySelector('a[href*="/tag/"]') ||
+    document.querySelector('[class*="topic-tag"] a') ||
+    document.querySelector('[data-cy="topic-tags"] a');
+
+  if (topicEl) {
+    // href is typically "/tag/array/" → extract "array"
+    const tagMatch = (topicEl.getAttribute('href') || '').match(/\/tag\/([^/]+)/);
+    if (tagMatch) {
+      topicSlug = tagMatch[1];
+    } else {
+      // Fallback: use text content, lower-cased and hyphenated
+      topicSlug = topicEl.textContent.trim().toLowerCase().replace(/\s+/g, '-');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 7. Description — from the problem statement container (optional)
+  // ------------------------------------------------------------------
+  let description = '';
+
+  const descEl =
+    document.querySelector('[data-cy="question-content"]') ||
+    document.querySelector('[class*="question-content__JfgR"]') ||
+    document.querySelector('.content__u3I1') ||
+    document.querySelector('[class*="problem-statement"]') ||
+    document.querySelector('[class*="description__"]');
+
+  if (descEl) {
+    description = descEl.textContent.trim();
+  }
+
+  // ------------------------------------------------------------------
+  // 8. Derive fileExtension and domain from language
+  // ------------------------------------------------------------------
+  const fileExtension = getFileExtension(language);
+  const domain        = getDomain(language);
+
+  // ------------------------------------------------------------------
+  // 9. Validate path components — all must be present before proceeding
+  //    (domain is always derived and non-empty; check others)
+  // ------------------------------------------------------------------
+  if (!domain) {
+    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "domain"');
+    return null;
+  }
+  if (!topicSlug) {
+    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "topicSlug"');
+    return null;
+  }
+  if (!problemNumber) {
+    // Already checked above, but kept for defensive completeness
+    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "problemNumber"');
+    return null;
+  }
+  if (!problemSlug) {
+    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "problemSlug"');
+    return null;
+  }
+
+  // ------------------------------------------------------------------
+  // 10. Return the complete payload
+  // ------------------------------------------------------------------
+  return {
+    problemNumber,
+    problemSlug,
+    problemTitle,
+    topicSlug,
+    language,
+    fileExtension,
+    domain,
+    code,
+    description,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Modal Injection (Requirements 5.1, 5.2, 5.3, 5.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Injects the modal overlay into the current LeetCode page.
+ *
+ * Creates the root #lgs-modal element and all required child elements:
+ *  - #lgs-notes     textarea (maxlength 10000)
+ *  - #lgs-submit-btn button
+ *  - #lgs-spinner   loading indicator (hidden by default)
+ *  - #lgs-close-btn dismiss control
+ *  - #lgs-status    status/error message display area
+ *
+ * The modal is appended to document.body. isModalOpen is set to true on
+ * injection and false when the modal is removed (close button click or
+ * Escape key).
+ *
+ * Guard: returns early (idempotent) if #lgs-modal already exists in the DOM.
+ *
+ * Requirements: 5.1, 5.2, 5.3, 5.4
+ *
+ * @param {Object} payload - The scraped submission payload from scrapeSubmission().
+ */
+function injectModal(payload) {
+  // Idempotency guard: do not inject if a modal already exists in the DOM
+  if (document.getElementById('lgs-modal')) {
+    return;
+  }
+
+  isModalOpen = true;
+
+  // Root modal container
+  const modal = document.createElement('div');
+  modal.id = 'lgs-modal';
+  modal.setAttribute('data-payload', JSON.stringify(payload));
+
+  const closeModal = () => {
+    // Requirement 5.10: if the spinner is visible (submit in progress), cancel
+    // the UI state by hiding the spinner first. Do NOT send a duplicate message.
+    if (spinner.style.display !== 'none') {
+      spinner.style.display = 'none';
+    }
+    modal.remove();
+    isModalOpen = false;
+    document.removeEventListener('keydown', onKeyDown);
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') closeModal();
+  };
+
+  // Close button — dismisses without pushing (Requirements 5.9, 5.10)
+  const closeBtn = document.createElement('button');
+  closeBtn.id = 'lgs-close-btn';
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', closeModal);
+
+  // Notes textarea — empty by default, max 10000 chars (Requirement 5.2)
+  const notes = document.createElement('textarea');
+  notes.id = 'lgs-notes';
+  notes.maxLength = 10000;
+
+  // Loading spinner — hidden by default (Requirement 5.4)
+  const spinner = document.createElement('div');
+  spinner.id = 'lgs-spinner';
+  spinner.style.display = 'none';
+
+  // Status/error message display area
+  const status = document.createElement('div');
+  status.id = 'lgs-status';
+
+  // Submit button (Requirement 5.3)
+  const submitBtn = document.createElement('button');
+  submitBtn.id = 'lgs-submit-btn';
+  submitBtn.textContent = 'Submit & Push to GitHub';
+
+  // Submit button click handler (Requirements 5.5, 5.6, 5.7, 5.8)
+  submitBtn.addEventListener('click', () => {
+    // Show spinner and disable button to prevent duplicate submissions (Requirement 5.5)
+    spinner.style.display = '';
+    submitBtn.disabled = true;
+
+    // Read notes value and build the full message payload (Requirement 5.6)
+    const notesValue = notes.value;
+    const messagePayload = { ...payload, notes: notesValue };
+
+    // Send message to background service worker (Requirement 5.6)
+    // Guard: only call chrome.runtime if the API is available (browser context check)
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.sendMessage(
+        { type: 'PUSH_SUBMISSION', payload: messagePayload },
+        (response) => {
+          // Requirement 5.10: if the modal was dismissed while the push was in
+          // flight, it will no longer be in the DOM. In that case this callback
+          // must be a complete no-op — do not manipulate spinner/status/button
+          // and do not schedule a second removal.
+          if (!document.getElementById('lgs-modal')) return;
+
+          if (response && response.ok === true) {
+            // Success: hide spinner, show success message, remove modal after 2000ms (Requirement 5.7)
+            spinner.style.display = 'none';
+            status.textContent = 'Pushed successfully!';
+            setTimeout(() => {
+              closeModal();
+            }, 2000);
+          } else {
+            // Error: hide spinner, display error, re-enable button (Requirement 5.8)
+            spinner.style.display = 'none';
+            status.textContent = (response && response.error) ? response.error : 'An unknown error occurred.';
+            submitBtn.disabled = false;
+          }
+        }
+      );
+    }
+  });
+
+  // Wrap inner elements in the card container so .lgs-card styles apply.
+  // The root #lgs-modal remains the full-viewport overlay.
+  const card = document.createElement('div');
+  card.className = 'lgs-card';
+  card.append(closeBtn, notes, spinner, status, submitBtn);
+  modal.appendChild(card);
+  document.body.appendChild(modal);
+  document.addEventListener('keydown', onKeyDown);
+}
+
+// ---------------------------------------------------------------------------
+// SPA Navigation Reconnect (Requirement 2.9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Tracks the current page URL so that SPA navigation can be detected by
+ * comparing against `window.location.href` on each animation frame.
+ *
+ * @type {string}
+ */
+let currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+/**
+ * Holds a reference to the active MutationObserver so that it can be
+ * disconnected before re-attaching on SPA navigation.
+ *
+ * @type {MutationObserver|null}
+ */
+let activeObserver = null;
+
+/**
+ * Disconnects the current observer (if any) and re-attaches a new one to
+ * the (potentially updated) submission result panel.
+ *
+ * Called on `popstate`, `hashchange`, and URL-polling detection when the
+ * current URL matches `https://leetcode.com/problems/*`.
+ *
+ * Requirements: 2.9
+ */
+function reconnectObserver() {
+  if (activeObserver) {
+    activeObserver.disconnect();
+    activeObserver = null;
+  }
+
+  // Only attach on problem pages
+  if (/^https:\/\/leetcode\.com\/problems\//.test(window.location.href)) {
+    // The new result panel may not yet be in the DOM; wait one tick so the
+    // SPA has a chance to mount the new route before we query for the panel.
+    setTimeout(() => {
+      activeObserver = attachObserver();
+    }, 0);
+  }
+}
+
+/**
+ * Polls for URL changes on every animation frame to catch SPA navigations
+ * (such as React-router `pushState` calls) that do not fire `popstate` or
+ * `hashchange` events.
+ *
+ * When a URL change to a LeetCode problem page is detected, calls
+ * `reconnectObserver()` and updates `currentUrl`.
+ *
+ * Requirements: 2.9
+ */
+function startUrlPolling() {
+  function poll() {
+    const latestUrl = window.location.href;
+    if (latestUrl !== currentUrl) {
+      currentUrl = latestUrl;
+      reconnectObserver();
+    }
+    requestAnimationFrame(poll);
+  }
+  requestAnimationFrame(poll);
+}
+
+// Listen for browser history navigation events that *do* fire events
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate',    reconnectObserver);
+  window.addEventListener('hashchange',  reconnectObserver);
+}
+
+// ---------------------------------------------------------------------------
+// MutationObserver Attachment (Requirements 2.1, 2.2, 2.3, 2.8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Boolean flag that tracks whether the notes modal is currently visible.
+ * Guards against opening duplicate modals when multiple mutation records
+ * fire for the same accepted-submission event.
+ *
+ * Requirements: 2.8
+ *
+ * @type {boolean}
+ */
+let isModalOpen = false;
+
+/**
+ * Attaches a MutationObserver to the LeetCode submission result panel.
+ *
+ * The observer watches for any DOM changes within the result panel
+ * (childList, subtree, and characterData). When any text node within
+ * the observed subtree contains exactly "Accepted" (strict equality after
+ * trim), and no modal is already open, the function:
+ *   1. Calls scrapeSubmission() to gather problem data.
+ *   2. Calls injectModal(payload) if scraping succeeds.
+ *
+ * If the result panel element is not found in the DOM at call time, the
+ * function logs a warning and returns without creating an observer.
+ *
+ * Requirements: 2.1, 2.2, 2.3, 2.8
+ *
+ * @returns {MutationObserver|null} The created observer instance, or null if
+ *   the target panel was not found.
+ */
+function attachObserver() {
+  // Locate the submissions result panel.
+  // Try the e2e-locator attribute first (used by LeetCode's testing harness),
+  // then fall back to class-based selectors that include "result" in their name.
+  const resultPanel =
+    document.querySelector('[data-e2e-locator="submission-result"]') ||
+    document.querySelector('[class*="result__"]') ||
+    document.querySelector('[class*="result-container"]') ||
+    document.querySelector('[class*="ResultState"]') ||
+    // Generic fallback: any element whose class contains the word "result"
+    document.querySelector('[class*="result"]');
+
+  if (!resultPanel) {
+    console.warn('[leetcode-github-sync] attachObserver: submission result panel not found');
+    return null;
+  }
+
+  /**
+   * Recursively walks all text nodes within a DOM node and checks whether
+   * any of them contain exactly "Accepted" after trimming.
+   *
+   * @param {Node} node - The DOM node to start from.
+   * @returns {boolean} True if an "Accepted" text node was found.
+   */
+  function hasAcceptedText(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent.trim() === 'Accepted';
+    }
+    for (const child of node.childNodes) {
+      if (hasAcceptedText(child)) return true;
+    }
+    return false;
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    // Skip if the modal is already open — guard against duplicate triggers.
+    if (isModalOpen) return;
+
+    let accepted = false;
+
+    for (const mutation of mutations) {
+      if (mutation.type === 'characterData') {
+        // A text node's data changed directly.
+        if (mutation.target.textContent.trim() === 'Accepted') {
+          accepted = true;
+          break;
+        }
+      } else {
+        // childList mutation — inspect added nodes and the whole subtree.
+        for (const addedNode of mutation.addedNodes) {
+          if (hasAcceptedText(addedNode)) {
+            accepted = true;
+            break;
+          }
+        }
+
+        // Also check the mutation target itself in case the text already settled.
+        if (!accepted && hasAcceptedText(mutation.target)) {
+          accepted = true;
+        }
+
+        if (accepted) break;
+      }
+    }
+
+    if (!accepted) return;
+
+    // Attempt to scrape — abort silently (errors already logged by scrapeSubmission).
+    const payload = scrapeSubmission();
+    if (!payload) return;
+
+    injectModal(payload);
+  });
+
+  observer.observe(resultPanel, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+
+  return observer;
+}
+
+// ---------------------------------------------------------------------------
+// Exports (Node/Jest environment — no-op in browser context)
+// ---------------------------------------------------------------------------
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    LANG_MAP,
+    getFileExtension,
+    getDomain,
+    buildRepoPath,
+    scrapeSubmission,
+    injectModal,
+    attachObserver,
+    reconnectObserver,
+    startUrlPolling,
+    // Export getter/setter for isModalOpen so tests can inspect and reset it.
+    get isModalOpen() { return isModalOpen; },
+    set isModalOpen(v) { isModalOpen = v; },
+    // Export getter/setter for currentUrl so tests can inspect and reset it.
+    get currentUrl() { return currentUrl; },
+    set currentUrl(v) { currentUrl = v; },
+    // Export getter/setter for activeObserver so tests can inspect and reset it.
+    get activeObserver() { return activeObserver; },
+    set activeObserver(v) { activeObserver = v; },
+  };
+}

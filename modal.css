@@ -1,0 +1,112 @@
+/* modal.css — Modal Overlay Styles
+   Injected as a content script CSS file into LeetCode pages (manifest.json).
+   Styles the #lgs-modal overlay and all child elements.
+   Requirements: 5.1
+   NOTE: No !important declarations — avoids CSP issues in content script context. */
+
+/* -----------------------------------------------------------------------
+   Overlay backdrop
+   Full-viewport fixed layer with a semi-transparent dark background,
+   flexbox-centered so the card appears in the middle of the screen.
+   ----------------------------------------------------------------------- */
+#lgs-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* -----------------------------------------------------------------------
+   Card container
+   White centered card with padding, rounded corners, drop shadow,
+   and a flex column layout with consistent gap between children.
+   ----------------------------------------------------------------------- */
+.lgs-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 420px;
+  max-width: 600px;
+  width: 90%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* -----------------------------------------------------------------------
+   Notes textarea
+   Full-width with a reasonable minimum height, monospace font, and a
+   visible border. Vertical resize allowed; box-sizing ensures padding is
+   included within the declared width.
+   ----------------------------------------------------------------------- */
+#lgs-notes {
+  width: 100%;
+  min-height: 120px;
+  font-family: monospace, sans-serif;
+  font-size: 13px;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+/* -----------------------------------------------------------------------
+   Loading spinner
+   Hidden by default — JS toggles display to show it.
+   ----------------------------------------------------------------------- */
+#lgs-spinner {
+  display: none;
+}
+
+/* -----------------------------------------------------------------------
+   Submit button
+   Primary action button — green background, white text, bold label.
+   ----------------------------------------------------------------------- */
+#lgs-submit-btn {
+  background: #2ea44f;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Disabled state — reduced opacity, not-allowed cursor. */
+#lgs-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* -----------------------------------------------------------------------
+   Close button
+   No visible background or border; aligned to the flex-end of the card.
+   ----------------------------------------------------------------------- */
+#lgs-close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+  align-self: flex-end;
+  line-height: 1;
+  padding: 0;
+}
+
+/* -----------------------------------------------------------------------
+   Status / error message area
+   ----------------------------------------------------------------------- */
+#lgs-status {
+  font-size: 13px;
+  color: #333;
+  min-height: 18px;
+}
