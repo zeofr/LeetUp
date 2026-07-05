@@ -1,10 +1,10 @@
-# LeetCode GitHub Sync
+# LeetUp
 
-A Chrome extension that automatically detects when you solve a LeetCode problem and pushes your solution along with a structured README to your GitHub repository. Zero copy-paste, zero context switching.
+A Chrome extension that automatically detects when you solve a LeetCode problem and pushes your solution — along with a structured README — to your GitHub repository. Zero copy-paste, zero context switching.
 
 ---
 
-## Why This Was Built
+## Why This Was Built — STAR
 
 **Situation**
 After grinding LeetCode daily, keeping a personal archive of accepted solutions was a manual chore: copy code, open GitHub, navigate to the right folder, paste, write a commit message, repeat. After a few weeks the habit broke and the archive fell behind.
@@ -64,7 +64,7 @@ future-explorations/
 
 ## Installation
 
-This extension is loaded as an unpacked extension in Developer Mode — it is not published to the Chrome Web Store.
+LeetUp is loaded as an unpacked extension in Developer Mode — it is not published to the Chrome Web Store.
 
 ### Prerequisites
 
@@ -77,21 +77,21 @@ This extension is loaded as an unpacked extension in Developer Mode — it is no
 1. Clone or download this repository.
 
 ```bash
-git clone https://github.com/<your-username>/leetcode-github-sync.git
+git clone https://github.com/zeofr/LeetUp.git
 ```
 
 2. Open Chrome and navigate to `chrome://extensions`.
 
 3. Enable **Developer mode** (toggle in the top-right corner).
 
-4. Click **Load unpacked** and select the `leetcode-github-sync` folder.
+4. Click **Load unpacked** and select the `LeetUp` folder.
 
-5. The extension icon appears in your toolbar. Click it to open the configuration popup.
+5. The LeetUp icon appears in your toolbar. Click it to open the configuration popup.
 
 6. Enter your credentials and click **Save**:
    - **PAT** — your GitHub Fine-Grained Personal Access Token
    - **Username** — your GitHub username
-   - **Repo** — the repository name (e.g. `leetcode-solutions`)
+   - **Repo** — the target repository name (e.g. `leetcode-solutions`)
 
 ---
 
@@ -99,9 +99,9 @@ git clone https://github.com/<your-username>/leetcode-github-sync.git
 
 1. Go to any LeetCode problem page (`leetcode.com/problems/...`).
 2. Write your solution and submit it.
-3. When the verdict shows **Accepted**, a modal appears automatically.
+3. When the verdict shows **Accepted**, the LeetUp modal appears automatically.
 4. Optionally add notes about your approach, then click **Push to GitHub**.
-5. The extension commits your solution and a README to your repository.
+5. LeetUp commits your solution and a README to your repository.
 
 The modal can be dismissed at any time with the **✕** button or the **Escape** key.
 

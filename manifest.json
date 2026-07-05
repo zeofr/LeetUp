@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LeetCode GitHub Sync",
+  "name": "LeetUp",
   "version": "1.0.0",
-  "description": "Automatically syncs accepted LeetCode solutions to a GitHub repository.",
+  "description": "Automatically pushes accepted LeetCode solutions to your GitHub repository.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://leetcode.com/*",

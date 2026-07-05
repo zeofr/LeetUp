@@ -48,7 +48,7 @@ function getFileExtension(language) {
   if (LANG_MAP.has(normalized)) {
     return LANG_MAP.get(normalized);
   }
-  console.warn(`[leetcode-github-sync] Unrecognized language: ${language}`);
+  console.warn(`[LeetUp] Unrecognized language: ${language}`);
   return '.txt';
 }
 
@@ -110,7 +110,7 @@ function buildRepoPath(domain, topicSlug, problemNumber, problemSlug) {
   const args = { domain, topicSlug, problemNumber, problemSlug };
   for (const [name, value] of Object.entries(args)) {
     if (!value && value !== 0) {
-      console.error(`[leetcode-github-sync] buildRepoPath: missing required argument "${name}"`);
+      console.error(`[LeetUp] buildRepoPath: missing required argument "${name}"`);
       return null;
     }
   }
@@ -194,7 +194,7 @@ function scrapeSubmission() {
 
   // Required: log error and return null if problemNumber is unavailable
   if (!problemNumber) {
-    console.error('[leetcode-github-sync] scrapeSubmission: missing required field "problemNumber"');
+    console.error('[LeetUp] scrapeSubmission: missing required field "problemNumber"');
     return null;
   }
 
@@ -270,7 +270,7 @@ function scrapeSubmission() {
 
   // Required: log error and return null if code is unavailable
   if (!code) {
-    console.error('[leetcode-github-sync] scrapeSubmission: missing required field "code"');
+    console.error('[LeetUp] scrapeSubmission: missing required field "code"');
     return null;
   }
 
@@ -323,20 +323,20 @@ function scrapeSubmission() {
   //    (domain is always derived and non-empty; check others)
   // ------------------------------------------------------------------
   if (!domain) {
-    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "domain"');
+    console.error('[LeetUp] scrapeSubmission: missing required path component "domain"');
     return null;
   }
   if (!topicSlug) {
-    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "topicSlug"');
+    console.error('[LeetUp] scrapeSubmission: missing required path component "topicSlug"');
     return null;
   }
   if (!problemNumber) {
     // Already checked above, but kept for defensive completeness
-    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "problemNumber"');
+    console.error('[LeetUp] scrapeSubmission: missing required path component "problemNumber"');
     return null;
   }
   if (!problemSlug) {
-    console.error('[leetcode-github-sync] scrapeSubmission: missing required path component "problemSlug"');
+    console.error('[LeetUp] scrapeSubmission: missing required path component "problemSlug"');
     return null;
   }
 
@@ -602,7 +602,7 @@ function attachObserver() {
     document.querySelector('[class*="result"]');
 
   if (!resultPanel) {
-    console.warn('[leetcode-github-sync] attachObserver: submission result panel not found');
+    console.warn('[LeetUp] attachObserver: submission result panel not found');
     return null;
   }
 
