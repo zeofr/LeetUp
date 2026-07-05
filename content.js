@@ -327,8 +327,11 @@ function scrapeSubmission() {
     return null;
   }
   if (!topicSlug) {
-    console.error('[LeetUp] scrapeSubmission: missing required path component "topicSlug"');
-    return null;
+    // LeetCode hides topic tags behind a toggle by default — they are often
+    // not in the DOM at submission time. Fall back to "uncategorized" so the
+    // push is not silently aborted just because tags are hidden.
+    console.warn('[LeetUp] scrapeSubmission: topicSlug not found, using "uncategorized"');
+    topicSlug = 'uncategorized';
   }
   if (!problemNumber) {
     // Already checked above, but kept for defensive completeness
@@ -572,37 +575,31 @@ if (typeof window !== 'undefined') {
 let isModalOpen = false;
 
 /**
- * Attaches a MutationObserver to the LeetCode submission result panel.
+ * Attaches a MutationObserver to detect "Accepted" verdicts on LeetCode.
  *
- * The observer watches for any DOM changes within the result panel
- * (childList, subtree, and characterData). When any text node within
- * the observed subtree contains exactly "Accepted" (strict equality after
- * trim), and no modal is already open, the function:
- *   1. Calls scrapeSubmission() to gather problem data.
- *   2. Calls injectModal(payload) if scraping succeeds.
+ * LeetCode is a React SPA — the submission result panel
+ * ([data-e2e-locator="submission-result"]) does not exist in the DOM when
+ * the page first loads. It is injected dynamically after the user clicks
+ * Submit. Observing a narrow panel that may not yet exist means the observer
+ * is never created and the modal never fires.
  *
- * If the result panel element is not found in the DOM at call time, the
- * function logs a warning and returns without creating an observer.
+ * Fix: always observe document.body as the stable root. The MutationObserver
+ * callback filters for "Accepted" text anywhere in the subtree, which works
+ * regardless of when or where LeetCode injects the result element.
  *
  * Requirements: 2.1, 2.2, 2.3, 2.8
  *
- * @returns {MutationObserver|null} The created observer instance, or null if
- *   the target panel was not found.
+ * @returns {MutationObserver} The created observer instance.
  */
 function attachObserver() {
-  // Locate the submissions result panel.
-  // Try the e2e-locator attribute first (used by LeetCode's testing harness),
-  // then fall back to class-based selectors that include "result" in their name.
-  const resultPanel =
-    document.querySelector('[data-e2e-locator="submission-result"]') ||
-    document.querySelector('[class*="result__"]') ||
-    document.querySelector('[class*="result-container"]') ||
-    document.querySelector('[class*="ResultState"]') ||
-    // Generic fallback: any element whose class contains the word "result"
-    document.querySelector('[class*="result"]');
+  // Always use document.body as the observation root.
+  // The result panel is injected dynamically after submission and may not
+  // exist when this function is called — observing body is the only reliable
+  // approach for a React SPA.
+  const resultPanel = document.body;
 
   if (!resultPanel) {
-    console.warn('[LeetUp] attachObserver: submission result panel not found');
+    console.warn('[LeetUp] attachObserver: document.body not available');
     return null;
   }
 
@@ -670,6 +667,17 @@ function attachObserver() {
   });
 
   return observer;
+}
+
+// ---------------------------------------------------------------------------
+// Initialisation — browser (content script) context only
+// Fix: attachObserver and startUrlPolling were defined but never called,
+// so the MutationObserver was never started. Adding these calls here ensures
+// the observer is active as soon as the content script is injected.
+// ---------------------------------------------------------------------------
+if (typeof module === 'undefined') {
+  activeObserver = attachObserver();
+  startUrlPolling();
 }
 
 // ---------------------------------------------------------------------------
