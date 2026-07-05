@@ -116,19 +116,18 @@ describe('buildRepoPath — Property 7: Repository path always follows the speci
   // Feature: leetcode-github-sync, Property 7: Repository path always follows the specified format
 
   test('path always matches the expected format regex', () => {
-    // ^[a-z-]+\/[a-z0-9-]+\/\d{4}-[a-z0-9-]+\/$
-    const pathRegex = /^[a-z-]+\/[a-z0-9-]+\/\d{4}-[a-z0-9-]+\/$/;
+    // ^[a-z-]+\/\d{4}-[a-z0-9-]+\/$  (no topic subfolder)
+    const pathRegex = /^[a-z-]+\/\d{4}-[a-z0-9-]+\/$/;
 
     fc.assert(
       fc.property(
         fc.record({
-          domain: fc.constantFrom('dsa', 'sql-databases', 'future-explorations'),
-          topicSlug: fc.stringMatching(/^[a-z][a-z0-9-]*$/),
+          domain: fc.constantFrom('dsa', 'sql-databases', 'shell-scripting'),
           problemNumber: fc.nat({ max: 9999 }),
           problemSlug: fc.stringMatching(/^[a-z][a-z0-9-]*$/),
         }),
-        ({ domain, topicSlug, problemNumber, problemSlug }) => {
-          const result = buildRepoPath(domain, topicSlug, problemNumber, problemSlug);
+        ({ domain, problemNumber, problemSlug }) => {
+          const result = buildRepoPath(domain, problemNumber, problemSlug);
           return result !== null && pathRegex.test(result);
         }
       ),

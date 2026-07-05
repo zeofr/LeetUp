@@ -184,18 +184,17 @@ describe('scrapeSubmission', () => {
     );
   });
 
-  // ---- Required path component: topicSlug ----
+  // ---- topicSlug is optional metadata — not required for path ----
 
-  test('uses deriveTopicSlugFallback when no topic tag links exist', () => {
+  test('succeeds even when no topic tag links exist (topicSlug is metadata only)', () => {
     buildDOM();
     document.body.querySelectorAll('a').forEach(a => a.remove());
 
     const result = scrapeSubmission();
 
-    // scrapeSubmission now falls back to deriveTopicSlugFallback rather than returning null
+    // topicSlug is no longer required for path construction — scrape should succeed
     expect(result).not.toBeNull();
-    expect(result.topicSlug).not.toBe('');
-    expect(result.topicSlug).not.toBeNull();
+    expect(result.topicSlug).toBe('');
   });
 
   // ---- Required path component: problemSlug ----

@@ -95,22 +95,25 @@ function getDomain(language) {
  * Constructs the repository target path for a problem's folder.
  *
  * The path format is:
- *   `{domain}/{topicSlug}/{paddedNumber}-{problemSlug}/`
+ *   `{domain}/{paddedNumber}-{problemSlug}/`
  * where `problemNumber` is zero-padded to 4 digits.
+ *
+ * The topic slug is intentionally omitted — a LeetCode problem fits multiple
+ * categories and the primary tag often does not reflect how the problem was
+ * actually solved. Using number + slug gives a stable, unambiguous path.
  *
  * Returns null and logs a console.error if any argument is falsy.
  *
- * Requirements: 4.4, 4.5
+ * Requirements: 4.4
  *
  * @param {string} domain        - Top-level domain folder (e.g. "dsa").
- * @param {string} topicSlug     - Primary topic tag slug (e.g. "array").
  * @param {number|string} problemNumber - Numeric problem ID (e.g. 1 → "0001").
  * @param {string} problemSlug   - Kebab-case problem identifier (e.g. "two-sum").
  * @returns {string|null} The repository path string, or null if any arg is falsy.
  */
-function buildRepoPath(domain, topicSlug, problemNumber, problemSlug) {
+function buildRepoPath(domain, problemNumber, problemSlug) {
   // Validate all required arguments — any falsy value is an error
-  const args = { domain, topicSlug, problemNumber, problemSlug };
+  const args = { domain, problemNumber, problemSlug };
   for (const [name, value] of Object.entries(args)) {
     if (!value && value !== 0) {
       console.error(`[LeetUp] buildRepoPath: missing required argument "${name}"`);
@@ -121,7 +124,7 @@ function buildRepoPath(domain, topicSlug, problemNumber, problemSlug) {
   // Zero-pad the problem number to 4 digits
   const paddedNumber = String(Number(problemNumber)).padStart(4, '0');
 
-  return `${domain}/${topicSlug}/${paddedNumber}-${problemSlug}/`;
+  return `${domain}/${paddedNumber}-${problemSlug}/`;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +309,7 @@ function scrapeSubmission() {
   }
 
   // ------------------------------------------------------------------
-  // 6. Topic slug — from the first topic tag link on the page
+  // 6. Topic slug — scraped for README metadata only (not used in path)
   //    LeetCode renders topic tags as links like /tag/array/
   // ------------------------------------------------------------------
   let topicSlug = '';
@@ -322,7 +325,6 @@ function scrapeSubmission() {
     if (tagMatch) {
       topicSlug = tagMatch[1];
     } else {
-      // Fallback: use text content, lower-cased and hyphenated
       topicSlug = topicEl.textContent.trim().toLowerCase().replace(/\s+/g, '-');
     }
   }
@@ -350,19 +352,12 @@ function scrapeSubmission() {
   const domain        = getDomain(language);
 
   // ------------------------------------------------------------------
-  // 9. Validate path components — all must be present before proceeding
-  //    (domain is always derived and non-empty; check others)
+  // 9. Validate path components — domain, problemNumber, problemSlug required
+  //    (topicSlug is optional metadata — not used in path construction)
   // ------------------------------------------------------------------
   if (!domain) {
     console.error('[LeetUp] scrapeSubmission: missing required path component "domain"');
     return null;
-  }
-  if (!topicSlug) {
-    // LeetCode hides topic tags behind a toggle by default — they are often
-    // not in the DOM at submission time. Fall back to deriveTopicSlugFallback
-    // so the push is not silently aborted just because tags are hidden.
-    console.warn('[LeetUp] scrapeSubmission: topicSlug not found, using fallback');
-    topicSlug = deriveTopicSlugFallback(problemSlug);
   }
   if (!problemNumber) {
     // Already checked above, but kept for defensive completeness

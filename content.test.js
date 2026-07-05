@@ -209,89 +209,81 @@ describe('getDomain', () => {
 const { buildRepoPath } = require('./content');
 
 describe('buildRepoPath', () => {
-  // Happy-path: correct path format
   test('returns correct path for a typical input', () => {
-    expect(buildRepoPath('dsa', 'array', 1, 'two-sum'))
-      .toBe('dsa/array/0001-two-sum/');
+    expect(buildRepoPath('dsa', 1, 'two-sum'))
+      .toBe('dsa/0001-two-sum/');
   });
 
   test('zero-pads single-digit problem numbers to 4 digits', () => {
-    expect(buildRepoPath('dsa', 'array', 1, 'two-sum'))
-      .toBe('dsa/array/0001-two-sum/');
+    expect(buildRepoPath('dsa', 1, 'two-sum'))
+      .toBe('dsa/0001-two-sum/');
   });
 
   test('zero-pads 2-digit problem numbers to 4 digits', () => {
-    expect(buildRepoPath('dsa', 'math', 42, 'trapping-rain-water'))
-      .toBe('dsa/math/0042-trapping-rain-water/');
+    expect(buildRepoPath('dsa', 42, 'trapping-rain-water'))
+      .toBe('dsa/0042-trapping-rain-water/');
   });
 
   test('zero-pads 3-digit problem numbers to 4 digits', () => {
-    expect(buildRepoPath('dsa', 'dynamic-programming', 322, 'coin-change'))
-      .toBe('dsa/dynamic-programming/0322-coin-change/');
+    expect(buildRepoPath('dsa', 322, 'coin-change'))
+      .toBe('dsa/0322-coin-change/');
   });
 
   test('does not pad 4-digit problem numbers', () => {
-    expect(buildRepoPath('dsa', 'tree', 1000, 'minimum-cost-to-connect-sticks'))
-      .toBe('dsa/tree/1000-minimum-cost-to-connect-sticks/');
+    expect(buildRepoPath('dsa', 1000, 'minimum-cost-to-connect-sticks'))
+      .toBe('dsa/1000-minimum-cost-to-connect-sticks/');
   });
 
   test('accepts string problem numbers', () => {
-    expect(buildRepoPath('sql-databases', 'database', '175', 'combine-two-tables'))
-      .toBe('sql-databases/database/0175-combine-two-tables/');
+    expect(buildRepoPath('sql-databases', '175', 'combine-two-tables'))
+      .toBe('sql-databases/0175-combine-two-tables/');
   });
 
   test('uses the correct domain in the path', () => {
-    expect(buildRepoPath('sql-databases', 'database', 1, 'some-problem'))
-      .toBe('sql-databases/database/0001-some-problem/');
+    expect(buildRepoPath('sql-databases', 1, 'some-problem'))
+      .toBe('sql-databases/0001-some-problem/');
 
-    expect(buildRepoPath('shell-scripting', 'shell', 1, 'some-problem'))
-      .toBe('shell-scripting/shell/0001-some-problem/');
+    expect(buildRepoPath('shell-scripting', 1, 'some-problem'))
+      .toBe('shell-scripting/0001-some-problem/');
   });
 
   test('path always ends with a trailing slash', () => {
-    const result = buildRepoPath('dsa', 'array', 1, 'two-sum');
+    const result = buildRepoPath('dsa', 1, 'two-sum');
     expect(result).toMatch(/\/$/);
   });
 
   // Null / error cases — missing arguments
   test('returns null and logs error when domain is falsy (null)', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(buildRepoPath(null, 'array', 1, 'two-sum')).toBeNull();
+    expect(buildRepoPath(null, 1, 'two-sum')).toBeNull();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"domain"'));
     errorSpy.mockRestore();
   });
 
   test('returns null and logs error when domain is empty string', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(buildRepoPath('', 'array', 1, 'two-sum')).toBeNull();
+    expect(buildRepoPath('', 1, 'two-sum')).toBeNull();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"domain"'));
-    errorSpy.mockRestore();
-  });
-
-  test('returns null and logs error when topicSlug is falsy', () => {
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(buildRepoPath('dsa', '', 1, 'two-sum')).toBeNull();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"topicSlug"'));
     errorSpy.mockRestore();
   });
 
   test('returns null and logs error when problemNumber is falsy (null)', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(buildRepoPath('dsa', 'array', null, 'two-sum')).toBeNull();
+    expect(buildRepoPath('dsa', null, 'two-sum')).toBeNull();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"problemNumber"'));
     errorSpy.mockRestore();
   });
 
   test('returns null and logs error when problemSlug is falsy', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(buildRepoPath('dsa', 'array', 1, '')).toBeNull();
+    expect(buildRepoPath('dsa', 1, '')).toBeNull();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"problemSlug"'));
     errorSpy.mockRestore();
   });
 
   test('returns null and logs error when all arguments are falsy', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(buildRepoPath(null, null, null, null)).toBeNull();
+    expect(buildRepoPath(null, null, null)).toBeNull();
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });

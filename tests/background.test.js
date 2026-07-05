@@ -744,7 +744,7 @@ describe('pushSubmission', () => {
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
 
-    const expectedPath = `dsa/array/0001-two-sum/solution.py`;
+    const expectedPath = `dsa/0001-two-sum/solution.py`;
     const [solutionGetUrl] = global.fetch.mock.calls[0];
     expect(solutionGetUrl).toContain(expectedPath);
   });
@@ -760,7 +760,7 @@ describe('pushSubmission', () => {
 
     await pushSubmission(BASE_PAYLOAD, VALID_CREDS);
 
-    const expectedPath = `dsa/array/0001-two-sum/README.md`;
+    const expectedPath = `dsa/0001-two-sum/README.md`;
     const [readmeGetUrl] = global.fetch.mock.calls[2];
     expect(readmeGetUrl).toContain(expectedPath);
   });

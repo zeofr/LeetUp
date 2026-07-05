@@ -217,9 +217,10 @@ async function pushSubmission(payload, _credentials = null) {
   }
 
   // --- 3. Construct paths ---
-  const solutionPath = `${payload.domain}/${payload.topicSlug}/${payload.problemNumber}-${payload.problemSlug}/solution${payload.fileExtension}`;
-  const readmePath   = `${payload.domain}/${payload.topicSlug}/${payload.problemNumber}-${payload.problemSlug}/README.md`;
-  const baseUrl      = `https://api.github.com/repos/${username}/${repo}/contents/`;
+  const solutionPath        = `${payload.domain}/${payload.problemNumber}-${payload.problemSlug}/solution${payload.fileExtension}`;
+  const readmePath          = `${payload.domain}/${payload.problemNumber}-${payload.problemSlug}/README.md`;
+  const problemStatementPath = `${payload.domain}/${payload.problemNumber}-${payload.problemSlug}/problem_statement.md`;
+  const baseUrl             = `https://api.github.com/repos/${username}/${repo}/contents/`;
 
   // --- 4. GET SHA for solution file ---
   const shaResult = await getFileSha(baseUrl + solutionPath, pat);
@@ -264,30 +265,27 @@ async function pushSubmission(payload, _credentials = null) {
     return { ok: false, error: sanitizeError(readmeResult.error, pat) };
   }
 
-  // --- 11. Build problem_statement.md path ---
-  const problemStatementPath = `${payload.domain}/${payload.topicSlug}/${payload.problemNumber}-${payload.problemSlug}/problem_statement.md`;
-
-  // --- 12. GET SHA for problem_statement.md ---
+  // --- 11. GET SHA for problem_statement.md ---
   const psShaResult = await getFileSha(baseUrl + problemStatementPath, pat);
   if (psShaResult.error) {
     return { ok: false, error: sanitizeError(psShaResult.error, pat) };
   }
   const psSha = psShaResult.sha;
 
-  // --- 13. Build problem_statement PUT body ---
+  // --- 12. Build problem_statement PUT body ---
   const psBody = {
     message: `Add solution for ${payload.problemNumber}. ${payload.problemTitle}`,
     content: toBase64(generateProblemStatement(payload.description)),
     ...(psSha ? { sha: psSha } : {}),
   };
 
-  // --- 14. PUT problem_statement.md ---
+  // --- 13. PUT problem_statement.md ---
   const psResult = await putFile(baseUrl + problemStatementPath, pat, psBody);
   if (!psResult.ok) {
     return { ok: false, error: sanitizeError(psResult.error, pat) };
   }
 
-  // --- 15. All three files pushed successfully ---
+  // --- 14. All three files pushed successfully ---
   return { ok: true };
 }
 
