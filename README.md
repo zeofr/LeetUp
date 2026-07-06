@@ -61,7 +61,7 @@ LeetUp uses a GitHub Fine-Grained Personal Access Token to push your work into y
 If you need help creating one, GitHub has a straightforward guide here:
 https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token#creating-a-fine-grained-personal-access-token
 
-For a simpler way, check this out: [Create a fine-grained PAT](https://github.com/settings/tokens).
+For a simpler way, check this out: [Create a fine-grained PAT](https://github.com/settings/personal-access-tokens).
 When you create the token, choose the repository(choose a specific repository) you want LeetUp to use, for Example "LeetcodeGrind" repository and grant it "Contents: Read and write access".
 
 ![Setup step 2](./docs/images/setup-2.png)
