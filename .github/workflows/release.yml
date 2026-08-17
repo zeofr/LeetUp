@@ -1,0 +1,186 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CD / Release — LeetUp Chrome Extension
+#
+# Triggers (both are manual / explicit — nothing publishes automatically):
+#   • A published GitHub Release (tag pushed via GitHub UI or `gh release create`)
+#   • Manual workflow dispatch (for testing the release pipeline without a tag)
+#
+# What this workflow does:
+#   1. Reruns all CI validation (same checks as ci.yml).
+#   2. Builds the verified extension ZIP.
+#   3. Attaches the ZIP to the GitHub Release as a release asset.
+#   4. Optionally publishes to the Chrome Web Store — ONLY when the three
+#      required secrets are present (see Required Secrets below). If the
+#      secrets are absent the publish step is skipped with a notice; the
+#      release asset is still uploaded.
+#
+# Required secrets (set in repo Settings → Secrets → Actions):
+#   CWS_CLIENT_ID        — OAuth2 client ID for the Chrome Web Store API
+#   CWS_CLIENT_SECRET    — OAuth2 client secret
+#   CWS_REFRESH_TOKEN    — OAuth2 refresh token (obtained via Google OAuth)
+#   CWS_EXTENSION_ID     — Chrome Web Store extension ID (from the store URL)
+#
+# Permissions:
+#   Default: read-only (contents: read).
+#   The `release` job is granted `contents: write` solely to upload the
+#   release asset. No other job has elevated permissions.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (build + validate only, do not attach to release or publish)"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  contents: read
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1: ci — re-run all CI checks (validate + test)
+  # ───────────────────────────────────────────────────────────────────────────
+  ci:
+    name: CI gate (validate + test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Validate package.json is valid JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json ✓')"
+
+      - name: Validate manifest.json is valid JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json ✓')"
+
+      - name: Validate manifest required fields and referenced local files
+        run: node scripts/validate-manifest.js
+
+      - name: Check JavaScript syntax (node --check)
+        run: |
+          for f in content.js background.js popup.js; do
+            node --check "$f" && echo "$f syntax ✓"
+          done
+
+      - name: Scan for committed secrets (TruffleHog)
+        uses: trufflesecurity/trufflehog@v3.82.6
+        with:
+          path: ./
+          base: ${{ github.event.release.target_commitish || github.event.before || github.sha }}
+          head: ${{ github.sha }}
+          extra_args: --only-verified
+
+      - name: Run test suite
+        run: npm test
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2: release — build ZIP, attach to GitHub Release, optionally publish
+  # ───────────────────────────────────────────────────────────────────────────
+  release:
+    name: Build, attach, and (optionally) publish
+    runs-on: ubuntu-latest
+    needs: ci
+    # Grant write access to release assets only in this job.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Build extension ZIP
+        run: node scripts/package-extension.js
+
+      - name: Validate ZIP contents
+        run: node scripts/validate-zip.js
+
+      # ── Attach ZIP to GitHub Release ─────────────────────────────────────
+      # Skipped on dry-run dispatches.
+      - name: Upload ZIP to GitHub Release
+        if: >
+          github.event_name == 'release' ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/leetup.zip
+          # Uses the built-in GITHUB_TOKEN — no extra secret needed for this.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Chrome Web Store publish ──────────────────────────────────────────
+      # This step only executes when ALL four CWS secrets are configured AND
+      # this is not a dry run. If any secret is absent, the step is skipped
+      # and a notice is printed. Secret values are never echoed in logs.
+      - name: Publish to Chrome Web Store
+        if: >
+          github.event_name != 'workflow_dispatch' ||
+          github.event.inputs.dry_run == 'false'
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          if [[ -z "$CWS_CLIENT_ID" || -z "$CWS_CLIENT_SECRET" || \
+                -z "$CWS_REFRESH_TOKEN" || -z "$CWS_EXTENSION_ID" ]]; then
+            echo "::notice::Chrome Web Store secrets not configured — skipping publish."
+            echo "::notice::To enable, set CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN, and CWS_EXTENSION_ID in repo secrets."
+            exit 0
+          fi
+
+          echo "Uploading extension to Chrome Web Store…"
+          # Use the official @googleapis/chrome-webstore npm package.
+          # Install it ad-hoc so it does not become a permanent devDependency.
+          npm install --no-save @googleapis/chrome-webstore@1
+
+          node - <<'EOF'
+          const { ChromeWebstoreUpload } = require('@googleapis/chrome-webstore');
+          const fs = require('fs');
+
+          async function publish() {
+            const webStore = new ChromeWebstoreUpload({
+              extensionId: process.env.CWS_EXTENSION_ID,
+              clientId:    process.env.CWS_CLIENT_ID,
+              clientSecret: process.env.CWS_CLIENT_SECRET,
+              refreshToken: process.env.CWS_REFRESH_TOKEN,
+            });
+
+            const zipStream = fs.createReadStream('dist/leetup.zip');
+            const uploadResult = await webStore.uploadExisting(zipStream);
+            console.log('Upload result:', uploadResult.uploadState);
+
+            if (uploadResult.uploadState !== 'SUCCESS') {
+              console.error('Upload failed:', JSON.stringify(uploadResult.itemError || [], null, 2));
+              process.exit(1);
+            }
+
+            const publishResult = await webStore.publish();
+            console.log('Publish result:', publishResult.status?.join(', ') ?? publishResult);
+          }
+
+          publish().catch(err => { console.error(err.message); process.exit(1); });
+          EOF

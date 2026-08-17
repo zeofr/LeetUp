@@ -12,6 +12,7 @@ If you want a personal record of your progress that feels organised without aski
 - [How your repository will look](#how-your-repository-will-look)
 - [Security and privacy](#security-and-privacy)
 - [For developers](#for-developers)
+- [CI/CD](#cicd)
 
 ---
 
@@ -135,6 +136,97 @@ npm test
 ```
 
 The current test suite covers the core behavior and keeps the extension grounded as it evolves.
+
+---
+
+## CI/CD
+
+### What CI checks (runs on every push to `main`, every pull request, and manually)
+
+The pipeline runs three sequential jobs:
+
+**1. validate**
+- Verifies `package.json` and `manifest.json` are valid JSON
+- Checks all manifest required fields (`manifest_version`, `name`, `version`) are present
+- Confirms every file the manifest references on disk exists: `background.js`, `content.js`, `modal.css`, `popup.html`, `popup.js`, `popup.css`, and all three icons
+- Checks JavaScript syntax in `content.js`, `background.js`, and `popup.js` using Node's built-in `--check` flag (no ESLint dependency needed)
+- Scans the commit range for committed secrets (tokens, keys, PATs) using TruffleHog `--only-verified`
+
+**2. test** (runs only after `validate` passes)
+- Installs dependencies reproducibly with `npm ci`
+- Runs the full Jest suite (`npm test` → `jest --runInBand`)
+- Fails the build on any test failure
+- Specifically covers: stale "Accepted" nodes not triggering the modal, unrelated DOM mutations not triggering the modal, non-Accepted verdicts not triggering the modal, genuine accepted submission opening exactly one modal, and GitHub push starting only after the user clicks the modal button
+
+> **Test coverage limitation:** all tests run in jsdom, not a real Chrome runtime. They do not prove compatibility with LeetCode's live production DOM.
+
+**3. package** (runs only after `test` passes)
+- Builds a clean `dist/leetup.zip` containing only the ten extension files Chrome needs
+- Validates the ZIP: checks manifest is valid inside it, all referenced assets are present, and no forbidden files (tests, `node_modules`, `.env`, `.pem`, `.key`) were accidentally included
+- Uploads the ZIP as a workflow artifact (retained 30 days) for manual inspection
+
+**Linting note:** No ESLint configuration exists in this project. Adding a lint ruleset is recommended as a follow-up but was intentionally not added here to avoid a large formatting migration.
+
+---
+
+### What CD does and does not publish
+
+CD is fully manual and release-gated — nothing publishes automatically.
+
+**Triggers:**
+- Publishing a GitHub Release (via the GitHub UI or `gh release create`)
+- Manual `workflow_dispatch` (useful for dry runs)
+
+**What happens:**
+1. All CI checks above are re-run from scratch
+2. The verified extension ZIP is built
+3. The ZIP is attached to the GitHub Release as a downloadable asset (uses the built-in `GITHUB_TOKEN` — no extra secret required for this step)
+4. If Chrome Web Store secrets are configured, the ZIP is uploaded and published to the store; if they are absent, this step prints a notice and exits cleanly
+
+**What CD does NOT do:**
+- Does not push to the Chrome Web Store without all four CWS secrets being explicitly set
+- Does not run automatically on pushes or merges — only on a deliberately published release or a manual dispatch
+
+---
+
+### Required secrets
+
+Set these in **Settings → Secrets and variables → Actions** on GitHub:
+
+| Secret | Required for | Description |
+|---|---|---|
+| `CWS_CLIENT_ID` | Chrome Web Store publish | OAuth2 client ID from the Google Cloud Console |
+| `CWS_CLIENT_SECRET` | Chrome Web Store publish | OAuth2 client secret |
+| `CWS_REFRESH_TOKEN` | Chrome Web Store publish | OAuth2 refresh token (obtained via Google OAuth flow) |
+| `CWS_EXTENSION_ID` | Chrome Web Store publish | The extension's ID from the Chrome Web Store URL |
+
+The CI zip-artifact upload and GitHub Release asset upload require no additional secrets beyond the built-in `GITHUB_TOKEN`.
+
+---
+
+### How to trigger a release manually
+
+**Option 1 — GitHub Release (recommended):**
+```bash
+gh release create v1.2.3 --title "v1.2.3" --notes "Release notes here"
+```
+This publishes a GitHub Release, which triggers the release workflow automatically.
+
+**Option 2 — Manual workflow dispatch (dry run):**
+1. Go to **Actions → Release** in the GitHub UI
+2. Click **Run workflow**
+3. Leave `dry_run` set to `true` to build and validate only (no release asset upload, no CWS publish)
+4. Set `dry_run` to `false` to attach the ZIP to the most recent release and optionally publish to the Chrome Web Store
+
+---
+
+### Node version
+
+Node **20 LTS** is used in all CI/CD jobs. No `engines` field or `.nvmrc` exists in this repository; 20 was chosen because it is the current Active LTS release and matches the local development environment (`v20.12.2`). The version is pinned to the major (`"20"`) so runner patch updates apply automatically.
+
+### Lockfile
+
+`package-lock.json` is tracked in git (a previous `.gitignore` entry that excluded it has been removed). This is required for `npm ci` to produce a deterministic install. Whenever you update dependencies, commit the updated lockfile alongside `package.json`.
 
 ---
 

@@ -1,0 +1,169 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI — LeetUp Chrome Extension
+#
+# Triggers:
+#   • Pull requests targeting main
+#   • Pushes to main
+#   • Manual workflow dispatch
+#
+# Node version: 20 LTS
+#   No `engines` field in package.json and no .nvmrc exist in this repo.
+#   Node 20 is the current Active LTS release (as of 2024) and matches the
+#   local development version (v20.12.2) verified during CI setup.
+#   Pin to "20" (major) so patch updates are applied automatically by the
+#   runner but no surprise major-version upgrades occur.
+#
+# Lockfile note:
+#   package-lock.json was previously listed in .gitignore (reproducibility
+#   gap). That entry has been removed; the lockfile is now tracked so that
+#   `npm ci` produces a deterministic install. If you ever regenerate the
+#   lockfile locally, commit the updated file alongside your package.json
+#   changes.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Default to read-only permissions for all jobs in this workflow.
+# Individual jobs that need more are granted it explicitly.
+permissions:
+  contents: read
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1: validate — JSON, manifest, asset presence, secrets scan, syntax
+  # ───────────────────────────────────────────────────────────────────────────
+  validate:
+    name: Validate extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Node setup ──────────────────────────────────────────────────────
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # ── Reproducible install ─────────────────────────────────────────────
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # ── JSON validity ────────────────────────────────────────────────────
+      - name: Validate package.json is valid JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json ✓')"
+
+      - name: Validate manifest.json is valid JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json ✓')"
+
+      # ── Manifest required fields ─────────────────────────────────────────
+      - name: Validate manifest required fields and referenced local files
+        run: node scripts/validate-manifest.js
+
+      # ── JavaScript syntax check ──────────────────────────────────────────
+      # Uses Node's own parser — no external lint toolchain required.
+      # Catches obvious syntax errors in all source JS files.
+      - name: Check JavaScript syntax (node --check)
+        run: |
+          for f in content.js background.js popup.js; do
+            node --check "$f" && echo "$f syntax ✓"
+          done
+
+      # ── Secrets scan ─────────────────────────────────────────────────────
+      # Scans the working tree for committed secrets (tokens, PATs, keys).
+      # Uses trufflesecurity/trufflehog — pinned to SHA for supply-chain safety.
+      # Does NOT print matched secret values; reports file+line only.
+      - name: Scan for committed secrets (TruffleHog)
+        uses: trufflesecurity/trufflehog@v3.82.6
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.sha }}
+          extra_args: --only-verified
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2: test — run the full Jest suite
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    needs: validate          # only run if validation passes
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # ── Test suite ───────────────────────────────────────────────────────
+      # `npm test` runs `jest --runInBand` (from package.json).
+      # Jest exits non-zero on any failure — the step therefore fails the job.
+      #
+      # Coverage note: tests run in jsdom, not a real Chrome runtime.
+      # They do not prove compatibility with LeetCode's live production DOM.
+      # The following categories are verified:
+      #   • Accepted text outside the result container → modal must NOT open
+      #   • Stale accepted node rediscovered during unrelated DOM mutation → must NOT open
+      #   • Wrong Answer / TLE / Runtime Error / etc. → modal must NOT open
+      #   • Genuine current accepted submission → opens exactly one modal
+      #   • GitHub push starts only after user clicks the modal's push button
+      - name: Run test suite
+        run: npm test
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 3: package — build and validate the extension ZIP artifact
+  # ───────────────────────────────────────────────────────────────────────────
+  package:
+    name: Package extension ZIP
+    runs-on: ubuntu-latest
+    needs: test              # only package if tests pass
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # ── Build clean ZIP ──────────────────────────────────────────────────
+      # The script includes only the files that belong in a Chrome extension
+      # package. It explicitly excludes: tests, node_modules, .git, docs,
+      # .kiro, credentials, zip files, and this workflow directory.
+      - name: Build extension ZIP
+        run: node scripts/package-extension.js
+
+      # ── Validate the ZIP ─────────────────────────────────────────────────
+      - name: Validate ZIP contents
+        run: node scripts/validate-zip.js
+
+      # ── Upload artifact ──────────────────────────────────────────────────
+      # The ZIP is uploaded for inspection. It is NOT automatically published
+      # to the Chrome Web Store — that requires manual CD (see release.yml).
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: leetup-extension-${{ github.sha }}
+          path: dist/leetup.zip
+          retention-days: 30
+          if-no-files-found: error
