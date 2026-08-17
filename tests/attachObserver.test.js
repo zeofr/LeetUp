@@ -83,11 +83,12 @@ describe('attachObserver', () => {
   // ---- Target panel detection ----
 
   test('returns a MutationObserver instance (observes document.body)', () => {
-    // attachObserver always uses document.body as the stable root,
-    // so it always succeeds when document.body is available.
+    // attachObserver now returns a handle object (not a raw MutationObserver)
+    // because it manages an internal two-phase observer pair. It has a disconnect()
+    // method, which is the only externally required interface.
     const observer = contentModule.attachObserver();
     expect(observer).not.toBeNull();
-    expect(observer).toBeInstanceOf(MutationObserver);
+    expect(typeof observer.disconnect).toBe('function');
     observer.disconnect();
   });
 
@@ -305,10 +306,11 @@ describe('attachObserver', () => {
   // ---- Observer targets document.body ----
 
   test('returns a MutationObserver even when no result panel element exists', () => {
-    // attachObserver observes document.body — no specific panel needed
+    // attachObserver observes document.body for container insertion in Phase 1,
+    // so it always returns a handle when document.body is available.
     const observer = contentModule.attachObserver();
     expect(observer).not.toBeNull();
-    expect(observer).toBeInstanceOf(MutationObserver);
+    expect(typeof observer.disconnect).toBe('function');
     observer.disconnect();
   });
 });

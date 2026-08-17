@@ -603,6 +603,11 @@ function reconnectObserver() {
     activeObserver = null;
   }
 
+  // Reset any pending submission state from the prior page — prevents cross-page
+  // false positives where a stale "Accepted" node on the new page would fire
+  // while pendingSubmission is still true from a prior navigation.
+  clearPendingSubmission();
+
   // Only attach on problem pages
   if (/^https:\/\/leetcode\.com\/problems\//.test(window.location.href)) {
     // The new result panel may not yet be in the DOM; wait one tick so the
@@ -722,106 +727,240 @@ function attachSubmitClickListener() {
 }
 
 /**
- * Attaches a MutationObserver to detect "Accepted" verdicts on LeetCode.
+ * Selector for the LeetCode submission result container.
+ * LeetCode injects this element dynamically after the user clicks Submit.
  *
- * LeetCode is a React SPA — the submission result panel
- * ([data-e2e-locator="submission-result"]) does not exist in the DOM when
- * the page first loads. It is injected dynamically after the user clicks
- * Submit. Observing a narrow panel that may not yet exist means the observer
- * is never created and the modal never fires.
+ * @type {string}
+ */
+const RESULT_CONTAINER_SELECTOR = '[data-e2e-locator="submission-result"]';
+
+/**
+ * Final verdict strings that signal the submission is complete (but not Accepted).
+ * When any of these appear in the result container we disarm pendingSubmission
+ * without opening the modal.
  *
- * Fix: always observe document.body as the stable root. The MutationObserver
- * callback filters for "Accepted" text anywhere in the subtree, which works
- * regardless of when or where LeetCode injects the result element.
+ * @type {Set<string>}
+ */
+const FINAL_NON_ACCEPTED_VERDICTS = new Set([
+  'Wrong Answer',
+  'Time Limit Exceeded',
+  'Runtime Error',
+  'Memory Limit Exceeded',
+  'Compile Error',
+  'Output Limit Exceeded',
+]);
+
+/**
+ * Recursively walks the subtree of *newly added* nodes to check whether any
+ * text node trims to exactly "Accepted".  Only call this on nodes from
+ * `MutationRecord.addedNodes` — never on `mutation.target` — to avoid
+ * rediscovering stale nodes that were already in the DOM.
  *
- * Requirements: 2.1, 2.2, 2.3, 2.8
+ * @param {Node} node - A newly added DOM node.
+ * @returns {boolean} True if an "Accepted" text node was found.
+ */
+function hasAcceptedTextInAdded(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent.trim() === 'Accepted';
+  }
+  for (const child of node.childNodes) {
+    if (hasAcceptedTextInAdded(child)) return true;
+  }
+  return false;
+}
+
+/**
+ * Recursively checks whether any newly added node (or its descendants) contains
+ * a final non-Accepted verdict string.
  *
- * @returns {MutationObserver} The created observer instance.
+ * @param {Node} node - A newly added DOM node.
+ * @returns {boolean} True if a terminal non-Accepted verdict was found.
+ */
+function hasNonAcceptedVerdictInAdded(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return FINAL_NON_ACCEPTED_VERDICTS.has(node.textContent.trim());
+  }
+  for (const child of node.childNodes) {
+    if (hasNonAcceptedVerdictInAdded(child)) return true;
+  }
+  return false;
+}
+
+/**
+ * Attaches a MutationObserver to detect "Accepted" verdicts on LeetCode using
+ * a two-phase strategy that avoids both whole-page scanning and stale-node
+ * rediscovery:
+ *
+ * Phase 1 — Container insertion watcher:
+ *   Observe document.body (childList+subtree) *only* to detect when
+ *   [data-e2e-locator="submission-result"] is inserted into the DOM.
+ *   If the container already exists, skip Phase 1 and proceed directly.
+ *
+ * Phase 2 — Verdict observer:
+ *   Once the container is present, disconnect the Phase-1 watcher and
+ *   attach a narrowly scoped observer on the container itself.
+ *   The callback inspects ONLY:
+ *     - `mutation.addedNodes` (and their subtrees) for childList mutations
+ *     - `mutation.target` for characterData mutations
+ *   It never walks `mutation.target`'s full subtree on childList records,
+ *   which eliminates rediscovery of stale "Accepted" nodes.
+ *
+ * Additional guards:
+ *   - Only fires when pendingSubmission is true (user clicked Submit).
+ *   - Opens the modal at most once (isModalOpen guard).
+ *   - Disarms pendingSubmission on any final verdict (Accepted or non-Accepted).
+ *
+ * Requirements: 1.1–1.5, 2.1–2.4, 3.1–3.4
+ *
+ * @returns {{ disconnect: function }} An object with a disconnect() method that
+ *   tears down whichever phase is currently active. Compatible with the existing
+ *   activeObserver API.
  */
 function attachObserver() {
-  // Always use document.body as the observation root.
-  // The result panel is injected dynamically after submission and may not
-  // exist when this function is called — observing body is the only reliable
-  // approach for a React SPA.
-  const resultPanel = document.body;
-
-  if (!resultPanel) {
+  if (!document.body) {
     console.warn('[LeetUp] attachObserver: document.body not available');
     return null;
   }
 
-  /**
-   * Recursively walks all text nodes within a DOM node and checks whether
-   * any of them contain exactly "Accepted" after trimming.
-   *
-   * @param {Node} node - The DOM node to start from.
-   * @returns {boolean} True if an "Accepted" text node was found.
-   */
-  function hasAcceptedText(node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return node.textContent.trim() === 'Accepted';
-    }
-    for (const child of node.childNodes) {
-      if (hasAcceptedText(child)) return true;
-    }
-    return false;
-  }
+  // Tracks whether this observer handle has been disconnected.
+  let disconnected = false;
 
-  const observer = new MutationObserver((mutations) => {
-    // Skip if the modal is already open — guard against duplicate triggers.
-    if (isModalOpen) return;
+  // Reference to whichever MutationObserver is currently active so that
+  // disconnect() can always tear down the live one.
+  let currentObserver = null;
 
-    // Only fire if the user actually clicked Submit. This prevents the observer
-    // from triggering on "Accepted" text rendered from existing submission history
-    // when the user navigates to a problem they have already solved.
-    if (!pendingSubmission) return;
+  // Public handle returned to callers — wraps whichever internal observer
+  // is active at any moment.
+  const handle = {
+    disconnect() {
+      disconnected = true;
+      if (currentObserver) {
+        currentObserver.disconnect();
+        currentObserver = null;
+      }
+    },
+  };
 
-    let accepted = false;
+  // ------------------------------------------------------------------
+  // Phase 2: Verdict observer — scoped to the result container only.
+  // Inspects ONLY newly added nodes and characterData targets; never
+  // walks mutation.target's existing subtree.
+  // ------------------------------------------------------------------
+  function attachVerdictObserver(container) {
+    if (disconnected) return;
 
-    for (const mutation of mutations) {
-      if (mutation.type === 'characterData') {
-        // A text node's data changed directly.
-        if (mutation.target.textContent.trim() === 'Accepted') {
-          accepted = true;
-          break;
-        }
-      } else {
-        // childList mutation — inspect added nodes and the whole subtree.
-        for (const addedNode of mutation.addedNodes) {
-          if (hasAcceptedText(addedNode)) {
-            accepted = true;
-            break;
+    const verdictObserver = new MutationObserver((mutations) => {
+      if (isModalOpen) return;
+      if (!pendingSubmission) return;
+
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData') {
+          // Text node data changed in-place — check the target directly.
+          const text = mutation.target.textContent.trim();
+          if (text === 'Accepted') {
+            clearPendingSubmission();
+            const payload = scrapeSubmission();
+            if (payload) injectModal(payload);
+            return;
+          }
+          if (FINAL_NON_ACCEPTED_VERDICTS.has(text)) {
+            clearPendingSubmission();
+            return;
+          }
+        } else if (mutation.type === 'childList') {
+          // Inspect only newly added nodes — never mutation.target's subtree.
+          for (const addedNode of mutation.addedNodes) {
+            if (hasAcceptedTextInAdded(addedNode)) {
+              clearPendingSubmission();
+              const payload = scrapeSubmission();
+              if (payload) injectModal(payload);
+              return;
+            }
+            if (hasNonAcceptedVerdictInAdded(addedNode)) {
+              clearPendingSubmission();
+              return;
+            }
           }
         }
+      }
+    });
 
-        // Also check the mutation target itself in case the text already settled.
-        if (!accepted && hasAcceptedText(mutation.target)) {
-          accepted = true;
+    verdictObserver.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    currentObserver = verdictObserver;
+    console.info('[LeetUp] Verdict observer attached to result container');
+  }
+
+  // ------------------------------------------------------------------
+  // Phase 1: Container insertion watcher — watches document.body only
+  // for the insertion of the result container, then hands off to Phase 2.
+  // ------------------------------------------------------------------
+
+  // If the container is already present (e.g. after SPA navigation where
+  // the previous result panel persists), skip Phase 1 entirely.
+  const existingContainer = document.querySelector(RESULT_CONTAINER_SELECTOR);
+  if (existingContainer) {
+    attachVerdictObserver(existingContainer);
+    return handle;
+  }
+
+  const insertionWatcher = new MutationObserver((mutations) => {
+    if (disconnected) return;
+
+    // Only care about insertions while we are waiting for a submission result.
+    // If pendingSubmission is false, ignore — we'll re-arm when needed.
+    if (!pendingSubmission) return;
+
+    for (const mutation of mutations) {
+      if (mutation.type !== 'childList') continue;
+      for (const addedNode of mutation.addedNodes) {
+        if (addedNode.nodeType !== Node.ELEMENT_NODE) continue;
+
+        // Check if the added node IS the container.
+        let container = null;
+        if (addedNode.matches && addedNode.matches(RESULT_CONTAINER_SELECTOR)) {
+          container = addedNode;
+        } else if (addedNode.querySelector) {
+          // Or if the container was inserted as a descendant of the added node.
+          container = addedNode.querySelector(RESULT_CONTAINER_SELECTOR);
         }
 
-        if (accepted) break;
+        if (container) {
+          // Disconnect Phase 1, switch to Phase 2.
+          insertionWatcher.disconnect();
+          attachVerdictObserver(container);
+
+          // The container may have been inserted with the verdict node already
+          // inside it (common when LeetCode renders the result in one React
+          // commit). Check the addedNodes subtree of the container itself now,
+          // since the verdict observer was not yet attached for that mutation.
+          if (pendingSubmission && !isModalOpen) {
+            if (hasAcceptedTextInAdded(container)) {
+              clearPendingSubmission();
+              const payload = scrapeSubmission();
+              if (payload) injectModal(payload);
+            } else if (hasNonAcceptedVerdictInAdded(container)) {
+              clearPendingSubmission();
+            }
+          }
+          return;
+        }
       }
     }
-
-    if (!accepted) return;
-
-    // Disarm the pending flag — we got the result we were waiting for.
-    clearPendingSubmission();
-
-    // Attempt to scrape — abort silently (errors already logged by scrapeSubmission).
-    const payload = scrapeSubmission();
-    if (!payload) return;
-
-    injectModal(payload);
   });
 
-  observer.observe(resultPanel, {
+  insertionWatcher.observe(document.body, {
     childList: true,
     subtree: true,
-    characterData: true,
   });
 
-  return observer;
+  currentObserver = insertionWatcher;
+  console.info('[LeetUp] Container insertion watcher active');
+  return handle;
 }
 
 // ---------------------------------------------------------------------------
@@ -843,6 +982,8 @@ if (typeof module === 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     LANG_MAP,
+    RESULT_CONTAINER_SELECTOR,
+    FINAL_NON_ACCEPTED_VERDICTS,
     getFileExtension,
     getDomain,
     deriveTopicSlugFallback,
