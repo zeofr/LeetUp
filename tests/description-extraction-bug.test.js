@@ -4,20 +4,17 @@
  */
 // tests/description-extraction-bug.test.js
 //
-// Bug Condition Exploration Test
+// Description Extraction — Fixed Behavior Tests
 // ─────────────────────────────────────────────────────────────────────────────
-// PURPOSE: Confirm the bug exists on UNFIXED code.
+// PURPOSE: Verify that the fixed code correctly extracts description from
+// __NEXT_DATA__ even when no legacy CSS selector elements are present in the DOM.
 //
-// This test intentionally asserts the BROKEN behavior:
-//   scrapeSubmission().description === ""
-// even when __NEXT_DATA__ contains a valid question.content field.
+// The fix reads question.content from __NEXT_DATA__ via three traversal paths:
+//   Path A: props.pageProps.dehydratedState.queries[*].state.data.question
+//   Path B: props.pageProps.question
+//   Path C: props.pageProps.data.question
 //
-// A PASSING test here means the bug is confirmed (the code does NOT read
-// __NEXT_DATA__ for the description, and the five stale CSS selectors are all
-// absent from the DOM, so description always comes back empty).
-//
-// When the fix is applied, this test will FAIL — which is the correct signal
-// that the bug has been resolved.
+// All tests assert the FIXED behavior: description is populated from __NEXT_DATA__.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { scrapeSubmission } = require('../content');
@@ -107,7 +104,7 @@ function buildMinimalDOM(contentHtml) {
 // Bug Condition Exploration Tests
 // ---------------------------------------------------------------------------
 
-describe('Bug Condition: description extraction fails on unfixed code', () => {
+describe('Fixed Behavior: description extraction reads from __NEXT_DATA__', () => {
   beforeEach(() => {
     setTwoSumLocation();
     resetDOM();
@@ -124,9 +121,9 @@ describe('Bug Condition: description extraction fails on unfixed code', () => {
 
   // ── TC-BUG-1 ──────────────────────────────────────────────────────────────
   // __NEXT_DATA__ present with rich question.content HTML, no CSS selector targets.
-  // Bug: description === "" because the code never reads __NEXT_DATA__.content.
+  // Fix: description is populated from __NEXT_DATA__.question.content (Path B).
   test(
-    'TC-BUG-1: description is "" when __NEXT_DATA__ has question.content but no CSS selector elements exist',
+    'TC-BUG-1: description is extracted from __NEXT_DATA__ when no CSS selector elements exist',
     () => {
       const richContentHtml =
         '<p>Given an array of integers <code>nums</code> and an integer ' +
@@ -146,10 +143,10 @@ describe('Bug Condition: description extraction fails on unfixed code', () => {
       // scrapeSubmission() must return a payload (DOM is otherwise valid)
       expect(result).not.toBeNull();
 
-      // ── BUG ASSERTION ──────────────────────────────────────────────────────
-      // On unfixed code: description is "" because __NEXT_DATA__ content is ignored.
-      // This assertion PASSES when the bug exists, FAILS when the fix is applied.
-      expect(result.description).toBe('');
+      // ── FIX ASSERTION ──────────────────────────────────────────────────────
+      // Fixed code reads __NEXT_DATA__ → description is populated.
+      expect(result.description).not.toBe('');
+      expect(result.description).toContain('Given an array of integers');
     }
   );
 
@@ -194,10 +191,10 @@ describe('Bug Condition: description extraction fails on unfixed code', () => {
   );
 
   // ── TC-BUG-4 ──────────────────────────────────────────────────────────────
-  // End-to-end: even with deeply nested dehydratedState path (Path A shape),
-  // the unfixed code returns description === "".
+  // End-to-end: with deeply nested dehydratedState path (Path A shape),
+  // the fixed code reads and returns the description from __NEXT_DATA__.
   test(
-    'TC-BUG-4: description is "" when __NEXT_DATA__ uses the dehydratedState path (Path A)',
+    'TC-BUG-4: description is extracted when __NEXT_DATA__ uses the dehydratedState path (Path A)',
     () => {
       // Inject __NEXT_DATA__ using the Path A shape (dehydratedState.queries[].state.data.question)
       const nextDataPathA = {
@@ -247,9 +244,10 @@ describe('Bug Condition: description extraction fails on unfixed code', () => {
 
       expect(result).not.toBeNull();
 
-      // ── BUG ASSERTION ──────────────────────────────────────────────────────
-      // Unfixed code never consults __NEXT_DATA__ for content → always ""
-      expect(result.description).toBe('');
+      // ── FIX ASSERTION ──────────────────────────────────────────────────────
+      // Fixed code reads Path A from __NEXT_DATA__ → description is populated.
+      expect(result.description).not.toBe('');
+      expect(result.description).toContain('Given an array of integers');
     }
   );
 
