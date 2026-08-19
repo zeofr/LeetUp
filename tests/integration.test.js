@@ -138,7 +138,7 @@ describe('Integration: background handler success path', () => {
     jest.useRealTimers();
     document.body.innerHTML = '';
     contentModule.isModalOpen = false;
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
   });
 
   test('pushSubmission returns { ok: true } when both solution and README PUTs succeed', async () => {

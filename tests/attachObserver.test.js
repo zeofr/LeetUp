@@ -6,6 +6,7 @@
 // Requirements: 2.1, 2.2, 2.3, 2.8
 
 const contentModule = require('../content');
+const { createValidPendingAttempt } = require('./test-helpers');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,6 +16,7 @@ const contentModule = require('../content');
 function resetDOM() {
   document.body.innerHTML = '';
   contentModule.isModalOpen = false;
+  contentModule.pendingAttempt = null;
 }
 
 /** Build a minimal result panel that attachObserver can target. */
@@ -71,7 +73,7 @@ function flushMicrotasks() {
 describe('attachObserver', () => {
   beforeEach(() => {
     resetDOM();
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -103,8 +105,8 @@ describe('attachObserver', () => {
 
     const observer = contentModule.attachObserver();
 
-    // Arm the pendingSubmission flag — simulates user clicking Submit
-    contentModule.pendingSubmission = true;
+    // Arm the pendingAttempt — simulates user clicking Submit
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     // Simulate LeetCode inserting "Accepted" into the result panel.
     const textNode = document.createTextNode('Accepted');
@@ -128,8 +130,8 @@ describe('attachObserver', () => {
     const panel = buildScrapablePage();
     const observer = contentModule.attachObserver();
 
-    // Arm the pendingSubmission flag — simulates user clicking Submit
-    contentModule.pendingSubmission = true;
+    // Arm the pendingAttempt — simulates user clicking Submit
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     const textNode = document.createTextNode(' Accepted ');
     panel.appendChild(textNode);
@@ -213,7 +215,7 @@ describe('attachObserver', () => {
     const observer = contentModule.attachObserver();
 
     // First accepted trigger — arm flag before first mutation
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
     const el1 = document.createElement('span');
     el1.textContent = 'Accepted';
     panel.appendChild(el1);
@@ -223,7 +225,7 @@ describe('attachObserver', () => {
     expect(firstModal).not.toBeNull();
 
     // Second accepted trigger while modal is open — re-arm but modal guard blocks it
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
     const el2 = document.createElement('span');
     el2.textContent = 'Accepted';
     panel.appendChild(el2);
@@ -247,8 +249,8 @@ describe('attachObserver', () => {
 
     await flushMicrotasks();
 
-    // Arm the pendingSubmission flag — simulates user clicking Submit
-    contentModule.pendingSubmission = true;
+    // Arm the pendingAttempt — simulates user clicking Submit
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     // Now mutate its data to "Accepted"
     textNode.data = 'Accepted';

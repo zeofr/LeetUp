@@ -8,6 +8,7 @@
 const fc = require('fast-check');
 const { LANG_MAP, getDomain, buildRepoPath, attachObserver } = require('../content');
 const contentModule = require('../content');
+const { createValidPendingAttempt } = require('./test-helpers');
 
 // ---------------------------------------------------------------------------
 // All language labels covered by this property test
@@ -191,12 +192,12 @@ describe('attachObserver — Property 8: Modal injection is idempotent (no dupli
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
   });
 
   test(
@@ -216,7 +217,7 @@ describe('attachObserver — Property 8: Modal injection is idempotent (no dupli
             for (const _status of acceptedEvents) {
               // Arm the flag for the first event only — after that isModalOpen blocks it
               if (!contentModule.isModalOpen) {
-                contentModule.pendingSubmission = true;
+                contentModule.pendingAttempt = createValidPendingAttempt();
               }
               // Append a new span with "Accepted" text — mimics what LeetCode does.
               const el = document.createElement('span');
@@ -230,7 +231,7 @@ describe('attachObserver — Property 8: Modal injection is idempotent (no dupli
 
             // Cleanup observer
             if (observer) observer.disconnect();
-            contentModule.pendingSubmission = false;
+            contentModule.pendingAttempt = null;
 
             return modalCount <= 1;
           }
@@ -523,12 +524,12 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
   });
 
   test(
@@ -572,11 +573,11 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
 
             const observer = attachObserver();
 
-            // Arm pendingSubmission so the guard allows the observer to fire
+            // Arm pendingAttempt so the guard allows the observer to fire
             // (simulates user having clicked Submit before the result appears)
             const shouldTrigger = statusText.trim() === 'Accepted';
             if (shouldTrigger) {
-              contentModule.pendingSubmission = true;
+              contentModule.pendingAttempt = createValidPendingAttempt();
             }
 
             // Simulate a DOM mutation delivering the generated status text
@@ -591,7 +592,7 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
 
             // Cleanup
             if (observer) observer.disconnect();
-            contentModule.pendingSubmission = false;
+            contentModule.pendingAttempt = null;
 
             // The flow should trigger iff the trimmed text is exactly "Accepted"
             return modalExists === shouldTrigger;
@@ -661,8 +662,8 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
 
             const observer = attachObserver();
 
-            // Arm pendingSubmission — simulates user clicking Submit
-            contentModule.pendingSubmission = true;
+            // Arm pendingAttempt — simulates user clicking Submit
+            contentModule.pendingAttempt = createValidPendingAttempt();
 
             const el = document.createElement('span');
             el.textContent = statusText;
@@ -674,7 +675,7 @@ describe('attachObserver — Property 1: Only "Accepted" triggers the submission
             const modalExists = document.getElementById('lgs-modal') !== null;
 
             if (observer) observer.disconnect();
-            contentModule.pendingSubmission = false;
+            contentModule.pendingAttempt = null;
 
             // All of these trim to "Accepted", so modal must be injected
             return modalExists === true;

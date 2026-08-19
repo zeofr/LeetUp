@@ -8,7 +8,7 @@
 // Covers six specific scenarios from the bugfix requirements:
 //  1. Unrelated "Accepted" text elsewhere on the page must NOT trigger modal.
 //  2. Stale "Accepted" node rediscovered during unrelated DOM mutation must NOT trigger.
-//  3. Non-Accepted final verdicts must NOT trigger modal (and must disarm pendingSubmission).
+//  3. Non-Accepted final verdicts must NOT trigger modal (and must disarm pendingAttempt).
 //  4. Delayed dynamic creation of the result container still triggers modal.
 //  5. One accepted result opens exactly one modal (idempotency).
 //  6. Slow completion beyond the former 15-second window still works (via container creation).
@@ -17,6 +17,7 @@
 
 const contentModule = require('../content');
 const { attachObserver, RESULT_CONTAINER_SELECTOR } = contentModule;
+const { createValidPendingAttempt } = require('./test-helpers');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -26,7 +27,7 @@ const { attachObserver, RESULT_CONTAINER_SELECTOR } = contentModule;
 function resetAll() {
   document.body.innerHTML = '';
   contentModule.isModalOpen  = false;
-  contentModule.pendingSubmission = false;
+  contentModule.pendingAttempt = null;
   jest.clearAllTimers();
 }
 
@@ -82,7 +83,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
-    contentModule.pendingSubmission = false;
+    contentModule.pendingAttempt = null;
     contentModule.isModalOpen = false;
   });
 
@@ -94,7 +95,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
     buildScrapablePage(); // container already in DOM
 
     const observer = attachObserver();
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     // Add "Accepted" text to an element that is NOT the result container
     const unrelated = document.createElement('div');
@@ -126,7 +127,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
 
     // Attach observer AFTER stale node exists — it should not immediately fire
     const observer = attachObserver();
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     await flush();
     // No modal yet (stale node was already there, no new addedNodes)
@@ -150,7 +151,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
 
   // -------------------------------------------------------------------------
   // Test 3: Non-Accepted final verdicts do not open modal AND disarm flag
-  // Requirement 2 AC3 — non-Accepted verdict disarms pendingSubmission
+  // Requirement 2 AC3 — non-Accepted verdict disarms pendingAttempt
   // -------------------------------------------------------------------------
   test.each([
     'Wrong Answer',
@@ -159,10 +160,10 @@ describe('Premature modal trigger — bugfix regression tests', () => {
     'Memory Limit Exceeded',
     'Compile Error',
     'Output Limit Exceeded',
-  ])('3. Non-Accepted verdict "%s" does not open modal and disarms pendingSubmission', async (verdict) => {
+  ])('3. Non-Accepted verdict "%s" does not open modal and disarms pendingAttempt', async (verdict) => {
     const container = buildScrapablePage();
     const observer = attachObserver();
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     const el = document.createElement('span');
     el.textContent = verdict;
@@ -171,8 +172,8 @@ describe('Premature modal trigger — bugfix regression tests', () => {
     await flush();
 
     expect(document.getElementById('lgs-modal')).toBeNull();
-    // pendingSubmission must be disarmed so stale nodes can't fire later
-    expect(contentModule.pendingSubmission).toBe(false);
+    // pendingAttempt must be disarmed so stale nodes can't fire later
+    expect(contentModule.pendingAttempt).toBe(null);
 
     observer.disconnect();
   });
@@ -203,7 +204,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
 
     // Attach observer — Phase 1 (insertion watcher) activates
     const observer = attachObserver();
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     // Verify no modal yet
     await flush();
@@ -232,7 +233,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
   test('5. Multiple rapid "Accepted" mutations open exactly one modal', async () => {
     const container = buildScrapablePage();
     const observer = attachObserver();
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     // Simulate React batching several childList mutations with "Accepted"
     for (let i = 0; i < 5; i++) {
@@ -250,7 +251,7 @@ describe('Premature modal trigger — bugfix regression tests', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 6: Slow completion — container appears after pendingSubmission is armed;
+  // Test 6: Slow completion — container appears after pendingAttempt is armed;
   //         modal fires when verdict arrives (no reliance on 15 s timeout)
   // Requirement 2 AC1 / AC2 — the two-phase strategy handles slow submissions
   // -------------------------------------------------------------------------
@@ -275,14 +276,14 @@ describe('Premature modal trigger — bugfix regression tests', () => {
     document.body.appendChild(langBtn);
 
     const observer = attachObserver();
-    contentModule.pendingSubmission = true;
+    contentModule.pendingAttempt = createValidPendingAttempt();
 
     // Advance timers by 14 seconds — still within the cleanup window
     jest.advanceTimersByTime(14000);
 
     // No verdict yet, no modal
     expect(document.getElementById('lgs-modal')).toBeNull();
-    expect(contentModule.pendingSubmission).toBe(true);
+    expect(contentModule.pendingAttempt).not.toBe(null);
 
     // Container + verdict now arrives (within the 15 s window)
     const container = document.createElement('div');
@@ -306,28 +307,28 @@ describe('Premature modal trigger — bugfix regression tests', () => {
   // Test 7: 15-second timeout alone does NOT open modal (cleanup only)
   // Requirement 3 AC2 — timeout is cleanup, not a trigger
   // -------------------------------------------------------------------------
-  test('7. 15-second timeout expiry only disarms pendingSubmission, never opens modal', async () => {
+  test('7. 15-second timeout expiry only disarms pendingAttempt, never opens modal', async () => {
     jest.useFakeTimers();
 
     buildScrapablePage();
     const observer = attachObserver();
 
-    // Arm pendingSubmission AND its safety timeout, just as attachSubmitClickListener does.
-    contentModule.pendingSubmission = true;
     // Fire the same logic the click listener uses: set a 15 s cleanup timeout.
     // We do this by triggering a synthetic click on a button labelled "submit".
+    // On click, scrapeSubmission() runs (will set pendingAttempt via production code
+    // or null if DOM isn't fully set up), and a 15 s cleanup timeout is armed.
     const fakeSubmitBtn = document.createElement('button');
     fakeSubmitBtn.textContent = 'submit';
     document.body.appendChild(fakeSubmitBtn);
     contentModule.attachSubmitClickListener(); // safe to call again; capture listener is additive
     fakeSubmitBtn.click();
 
-    // Advance past 15 seconds with no verdict
+    // Advance past 15 seconds with no verdict — timeout cleanup fires
     jest.advanceTimersByTime(16000);
     await Promise.resolve();
 
     expect(document.getElementById('lgs-modal')).toBeNull();
-    expect(contentModule.pendingSubmission).toBe(false); // disarmed by timeout
+    expect(contentModule.pendingAttempt).toBe(null); // disarmed by timeout
 
     jest.useRealTimers();
     observer.disconnect();
