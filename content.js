@@ -156,6 +156,178 @@ function deriveTopicSlugFallback(problemSlug) {
 }
 
 // ---------------------------------------------------------------------------
+// HTML-to-Plain-Text Conversion Helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a raw HTML string (e.g. from __NEXT_DATA__ question.content) into
+ * clean, Markdown-compatible plain text.
+ *
+ * Steps:
+ *  1. Guard — returns "" for null, undefined, or empty input.
+ *  2. Replace block-level closing tags (</p>, </div>, </li>, </pre>,
+ *     </h1>–</h6>) with "\n" for readable line breaks.
+ *  3. Replace <br> and <br/> with "\n".
+ *  4. Strip all remaining HTML tags with /<[^>]+>/g.
+ *  5. Decode HTML entities via a temporary DOM textarea element.
+ *  6. Normalize whitespace: collapse 3+ consecutive newlines to 2,
+ *     trim leading/trailing whitespace from each line, trim overall result.
+ *
+ * @param {string|null|undefined} html - Raw HTML string to convert.
+ * @returns {string} Clean plain-text string, or "" for empty/null input.
+ */
+function htmlToPlainText(html) {
+  // Step 1: Guard — return "" for null, undefined, or empty input
+  if (html == null || html === '') return '';
+
+  // Step 2: Replace block-level closing tags with newlines
+  let text = html
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/pre>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n');
+
+  // Step 3: Replace <br> / <br/> with newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+
+  // Step 4: Strip all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Step 5: Decode HTML entities via a temporary DOM textarea element.
+  // This naturally handles &lt; &gt; &amp; &quot; &#39; and all numeric entities.
+  if (typeof document !== 'undefined') {
+    const el = document.createElement('textarea');
+    el.innerHTML = text;
+    text = el.value;
+  }
+
+  // Step 6: Normalize whitespace
+  // Collapse 3+ consecutive newlines to 2
+  text = text.replace(/\n{3,}/g, '\n\n');
+  // Trim leading/trailing whitespace from each line
+  text = text.split('\n').map(line => line.trim()).join('\n');
+  // Trim overall result
+  text = text.trim();
+
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// __NEXT_DATA__ Description Extraction Helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Traverses the `__NEXT_DATA__` JSON script element to extract the raw HTML
+ * string for the problem description from `question.content`.
+ *
+ * Tries three traversal paths in order:
+ *  - Path A (dehydratedState): data.props.pageProps.dehydratedState.queries[*].state.data.question
+ *  - Path B (direct):          data.props.pageProps.question
+ *  - Path C (nested data):     data.props.pageProps.data.question
+ *
+ * Only reads `question.content` — no other field on the question object is accessed.
+ *
+ * @returns {{ html: string, found: boolean }}
+ *   `found: true` with the raw HTML string when a non-empty `content` is found;
+ *   `found: false` with `html: ""` on any failure (script absent, parse error,
+ *   invalid structure, or no non-empty `content` at any path).
+ */
+function extractDescriptionFromNextData() {
+  // Step 1: Locate the __NEXT_DATA__ script element
+  const script = document.querySelector('script#__NEXT_DATA__[type="application/json"]');
+  if (script === null) {
+    return { html: '', found: false };
+  }
+
+  // Step 2: Parse JSON — abort on parse error
+  let data;
+  try {
+    data = JSON.parse(script.textContent);
+  } catch (e) {
+    return { html: '', found: false };
+  }
+
+  // Step 3: Validate top-level structure
+  if (typeof data !== 'object' || data === null) {
+    return { html: '', found: false };
+  }
+  if (typeof data.props !== 'object' || data.props === null) {
+    return { html: '', found: false };
+  }
+  if (typeof data.props.pageProps !== 'object' || data.props.pageProps === null) {
+    return { html: '', found: false };
+  }
+
+  // Step 4: Try three traversal paths to locate the question object
+  let question = null;
+
+  // Path A: dehydratedState.queries — iterate all entries
+  const pathA = data.props.pageProps.dehydratedState;
+  if (typeof pathA === 'object' && pathA !== null) {
+    const queries = pathA.queries;
+    if (Array.isArray(queries)) {
+      for (const query of queries) {
+        const candidate = query &&
+          typeof query.state === 'object' && query.state !== null
+            ? (typeof query.state.data === 'object' && query.state.data !== null
+                ? query.state.data.question
+                : undefined)
+            : undefined;
+        if (
+          typeof candidate === 'object' &&
+          candidate !== null &&
+          typeof candidate.content === 'string' &&
+          candidate.content.length > 0
+        ) {
+          question = candidate;
+          break;
+        }
+      }
+    }
+  }
+
+  // Path B: data.props.pageProps.question
+  if (question === null) {
+    const candidate = data.props.pageProps.question;
+    if (
+      typeof candidate === 'object' &&
+      candidate !== null &&
+      typeof candidate.content === 'string'
+    ) {
+      question = candidate;
+    }
+  }
+
+  // Path C: data.props.pageProps.data.question
+  if (question === null) {
+    const pagePropsData = data.props.pageProps.data;
+    if (typeof pagePropsData === 'object' && pagePropsData !== null) {
+      const candidate = pagePropsData.question;
+      if (
+        typeof candidate === 'object' &&
+        candidate !== null &&
+        typeof candidate.content === 'string'
+      ) {
+        question = candidate;
+      }
+    }
+  }
+
+  // Step 5: Validate the content field
+  if (question === null) {
+    return { html: '', found: false };
+  }
+
+  const content = question.content;
+  if (typeof content !== 'string' || content.trim().length === 0) {
+    return { html: '', found: false };
+  }
+
+  return { html: content, found: true };
+}
+
+// ---------------------------------------------------------------------------
 // DOM Scraping (Requirements 2.4, 2.5, 2.6, 4.5)
 // ---------------------------------------------------------------------------
 
@@ -183,6 +355,12 @@ function deriveTopicSlugFallback(problemSlug) {
  * @returns {Object|null} Scraped payload object or null on failure.
  */
 function scrapeSubmission() {
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] scrapeSubmission called`);
+    console.log(`[LeetUp:DIAG] - URL pathname: ${window.location.pathname}`);
+    console.log(`[LeetUp:DIAG] - document.title: "${document.title}"`);
+  }
+
   // ------------------------------------------------------------------
   // 1. Problem slug — derived from URL pathname
   //    e.g. https://leetcode.com/problems/two-sum/description/
@@ -194,42 +372,205 @@ function scrapeSubmission() {
     ? pathParts[1]
     : '';
 
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] problemSlug extracted: "${problemSlug}"`);
+  }
+
   // ------------------------------------------------------------------
   // 2. Problem number — from page <title> or breadcrumb/heading text
   //    LeetCode titles are typically: "1. Two Sum - LeetCode"
   //    Try <title> first, then fall back to the main problem heading.
   // ------------------------------------------------------------------
   let problemNumber = '';
+  let extractionMethod = '';
 
   // Attempt 1: document.title  ("1. Two Sum - LeetCode")
   const titleMatch = document.title.match(/^(\d+)\./);
   if (titleMatch) {
     problemNumber = String(Number(titleMatch[1])).padStart(4, '0');
+    extractionMethod = 'document.title';
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] ✓ Extraction method: document.title`);
+      console.log(`[LeetUp:DIAG] ✓ Problem number: "${problemNumber}" (raw: ${titleMatch[1]})`);
+    }
+  } else if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] ✗ document.title did not match pattern /^(\\d+)\\./`);
   }
 
   // Attempt 2: heading element inside the problem content area
   // LeetCode renders the problem title as an <a> or heading containing "N. Title"
   if (!problemNumber) {
-    const headingEl =
-      document.querySelector('[data-cy="question-title"]') ||
-      document.querySelector('.mr-2.text-label-1') ||
-      document.querySelector('a[href*="/problems/"] .text-title-large') ||
-      // Generic: any heading-level element whose text starts with a digit and dot
-      Array.from(document.querySelectorAll('h4, h3, h2, h1, [class*="title"]'))
-        .find(el => /^\d+\./.test(el.textContent.trim()));
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Attempting heading selectors...`);
+    }
 
-    if (headingEl) {
-      const m = headingEl.textContent.trim().match(/^(\d+)\./);
-      if (m) {
-        problemNumber = String(Number(m[1])).padStart(4, '0');
+    const headingSelectors = [
+      '[data-cy="question-title"]',
+      '.mr-2.text-label-1',
+      'a[href*="/problems/"] .text-title-large',
+      '[class*="text-title"]',
+      '[class*="question-title"]',
+      'h4', 'h3', 'h2', 'h1',
+      '[class*="title"]',
+    ];
+
+    for (const selector of headingSelectors) {
+      const headingEl = document.querySelector(selector);
+      if (headingEl) {
+        const text = headingEl.textContent.trim();
+        const m = text.match(/^(\d+)\./);
+        if (m) {
+          problemNumber = String(Number(m[1])).padStart(4, '0');
+          extractionMethod = `heading selector: ${selector}`;
+          if (ENABLE_DIAGNOSTICS) {
+            console.log(`[LeetUp:DIAG] ✓ Extraction method: heading selector "${selector}"`);
+            console.log(`[LeetUp:DIAG] ✓ Problem number: "${problemNumber}" (raw: ${m[1]})`);
+            console.log(`[LeetUp:DIAG] ✓ Element text: "${text.substring(0, 50)}"`);
+          }
+          break;
+        } else if (ENABLE_DIAGNOSTICS) {
+          console.log(`[LeetUp:DIAG] ✗ Selector "${selector}" found but text did not match /^(\\d+)\\./ pattern`);
+          console.log(`[LeetUp:DIAG]   Text preview: "${text.substring(0, 50)}"`);
+        }
+      } else if (ENABLE_DIAGNOSTICS) {
+        console.log(`[LeetUp:DIAG] ✗ Selector "${selector}" not found in DOM`);
       }
+    }
+  }
+
+  // Attempt 3: Extract from URL if it contains the number
+  // e.g., some LeetCode URLs might have ?id=54 or similar
+  if (!problemNumber) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Attempting URL parameters...`);
+    }
+    const urlParams = new URLSearchParams(window.location.search);
+    const idParam = urlParams.get('id') || urlParams.get('problemId') || urlParams.get('qid');
+    if (idParam && /^\d+$/.test(idParam)) {
+      problemNumber = String(Number(idParam)).padStart(4, '0');
+      extractionMethod = 'URL parameter';
+      if (ENABLE_DIAGNOSTICS) {
+        console.log(`[LeetUp:DIAG] ✓ Extraction method: URL parameter`);
+        console.log(`[LeetUp:DIAG] ✓ Problem number: "${problemNumber}" (raw: ${idParam})`);
+      }
+    } else if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] ✗ No valid URL parameters found (checked: id, problemId, qid)`);
+    }
+  }
+
+  // Attempt 4: Check if problem number is embedded in page JSON/script tags
+  if (!problemNumber) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Attempting script tag extraction...`);
+    }
+    const scripts = document.querySelectorAll('script');
+    let scriptCheckCount = 0;
+    
+    // First try __NEXT_DATA__ which is commonly used by Next.js (LeetCode's framework)
+    for (const script of scripts) {
+      if (script.id === '__NEXT_DATA__' && script.type === 'application/json') {
+        try {
+          const data = JSON.parse(script.textContent);
+          // Navigate through common Next.js data structures
+          const questionId = 
+            data?.props?.pageProps?.dehydratedState?.queries?.[0]?.state?.data?.question?.questionFrontendId ||
+            data?.props?.pageProps?.question?.questionFrontendId ||
+            data?.props?.pageProps?.data?.question?.questionFrontendId;
+          
+          if (questionId) {
+            problemNumber = String(Number(questionId)).padStart(4, '0');
+            extractionMethod = '__NEXT_DATA__ JSON';
+            if (ENABLE_DIAGNOSTICS) {
+              console.log(`[LeetUp:DIAG] ✓ Extraction method: __NEXT_DATA__ JSON`);
+              console.log(`[LeetUp:DIAG] ✓ Problem number: "${problemNumber}" (raw: ${questionId})`);
+            }
+            break;
+          }
+        } catch (e) {
+          // Invalid JSON, continue to other methods
+          if (ENABLE_DIAGNOSTICS) {
+            console.log(`[LeetUp:DIAG] ✗ __NEXT_DATA__ found but JSON parse failed`);
+          }
+        }
+      }
+    }
+    
+    // Then try inline script tags with questionFrontendId
+    if (!problemNumber) {
+      for (const script of scripts) {
+        const content = script.textContent;
+        if (content.includes('questionFrontendId') || content.includes('questionId')) {
+          scriptCheckCount++;
+          // Look for patterns like "questionFrontendId":"54" or questionFrontendId:54
+          const match = content.match(/"questionFrontendId"\s*:\s*"?(\d+)"?/);
+          if (match) {
+            problemNumber = String(Number(match[1])).padStart(4, '0');
+            extractionMethod = 'script tag questionFrontendId';
+            if (ENABLE_DIAGNOSTICS) {
+              console.log(`[LeetUp:DIAG] ✓ Extraction method: script tag questionFrontendId`);
+              console.log(`[LeetUp:DIAG] ✓ Problem number: "${problemNumber}" (raw: ${match[1]})`);
+            }
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!problemNumber && ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] ✗ Script tag extraction failed (checked ${scriptCheckCount} inline scripts, __NEXT_DATA__ not found or invalid)`);
+    }
+  }
+
+  // Attempt 5: Search for any visible text containing "Problem #" pattern
+  if (!problemNumber) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Attempting body text patterns...`);
+    }
+    
+    // Safety check for document.body existence and innerText support
+    if (document.body && document.body.innerText) {
+      const bodyText = document.body.innerText;
+      const patterns = [
+        { regex: /Problem\s+#?(\d+)/i, name: 'Problem #N' },
+        { regex: /Question\s+#?(\d+)/i, name: 'Question #N' },
+        { regex: /\b(\d+)\s*\.\s*[A-Z]/, name: 'N. Title' },
+      ];
+      
+      for (const { regex, name } of patterns) {
+        const match = bodyText.match(regex);
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (num > 0 && num < 10000) {  // Sanity check
+            problemNumber = String(num).padStart(4, '0');
+            extractionMethod = `body text pattern: ${name}`;
+            if (ENABLE_DIAGNOSTICS) {
+              console.log(`[LeetUp:DIAG] ✓ Extraction method: body text pattern "${name}"`);
+              console.log(`[LeetUp:DIAG] ✓ Problem number: "${problemNumber}" (raw: ${match[1]})`);
+            }
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!problemNumber && ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] ✗ Body text patterns failed (document.body.innerText ${document.body && document.body.innerText ? 'available but' : 'not available or'} no match found)`);
     }
   }
 
   // Required: log error and return null if problemNumber is unavailable
   if (!problemNumber) {
     console.error('[LeetUp] scrapeSubmission: missing required field "problemNumber"');
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] ✗ All problem number extraction methods failed`);
+      console.log(`[LeetUp:DIAG]   Context: pathname=${window.location.pathname}, title="${document.title}"`);
+      console.log(`[LeetUp:DIAG]   DOM state: document.body exists=${!!document.body}, scripts count=${document.querySelectorAll('script').length}`);
+    }
     return null;
+  }
+
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] ✓ Problem number extraction succeeded via: ${extractionMethod}`);
   }
 
   // ------------------------------------------------------------------
@@ -330,19 +671,41 @@ function scrapeSubmission() {
   }
 
   // ------------------------------------------------------------------
-  // 7. Description — from the problem statement container (optional)
+  // 7. Description — fallback chain: __NEXT_DATA__ JSON → DOM selectors
   // ------------------------------------------------------------------
+
+  // --- Primary: __NEXT_DATA__ JSON ---
   let description = '';
+  let extractionSource = 'none';
 
-  const descEl =
-    document.querySelector('[data-cy="question-content"]') ||
-    document.querySelector('[class*="question-content__JfgR"]') ||
-    document.querySelector('.content__u3I1') ||
-    document.querySelector('[class*="problem-statement"]') ||
-    document.querySelector('[class*="description__"]');
+  const nextDataResult = extractDescriptionFromNextData();
+  if (nextDataResult.found) {
+    const converted = htmlToPlainText(nextDataResult.html);
+    if (converted.length > 0) {
+      description = converted;
+      extractionSource = '__NEXT_DATA__';
+    }
+  }
 
-  if (descEl) {
-    description = descEl.textContent.trim();
+  // --- Secondary fallback: DOM selectors ---
+  if (description === '') {
+    const descEl =
+      document.querySelector('[data-track-load="description-content"]') ||
+      document.querySelector('[class*="elfjS"]') ||
+      document.querySelector('[data-cy="question-content"]') ||
+      document.querySelector('[class*="question-content"]') ||
+      document.querySelector('[class*="description"]');
+    if (descEl !== null) {
+      description = descEl.textContent.trim();
+      extractionSource = 'DOM-selector';
+    }
+  }
+
+  // --- Diagnostics ---
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] description extraction source: "${extractionSource}"`);
+    console.log(`[LeetUp:DIAG] description extraction success: ${description.length > 0}`);
+    console.log(`[LeetUp:DIAG] description byte length: ${new TextEncoder().encode(description).length}`);
   }
 
   // ------------------------------------------------------------------
@@ -466,7 +829,14 @@ function createToolbar(textarea) {
 function injectModal(payload) {
   // Idempotency guard: do not inject if a modal already exists in the DOM
   if (document.getElementById('lgs-modal')) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] injectModal blocked: modal already exists, timestamp: ${Date.now()}`);
+    }
     return;
+  }
+
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] injectModal called, timestamp: ${Date.now()}`);
   }
 
   isModalOpen = true;
@@ -581,6 +951,23 @@ function injectModal(payload) {
 let currentUrl = typeof window !== 'undefined' ? window.location.href : '';
 
 /**
+ * Extracts the problem slug from a LeetCode problem or submission URL.
+ * Returns null if the URL is not a recognized problem/submission page.
+ *
+ * Examples:
+ *   /problems/two-sum/ → "two-sum"
+ *   /problems/two-sum/description/ → "two-sum"
+ *   /problems/two-sum/submissions/123456/ → "two-sum"
+ *
+ * @param {string} url - The URL to parse.
+ * @returns {string|null} The problem slug or null.
+ */
+function extractProblemSlug(url) {
+  const match = url.match(/\/problems\/([^/]+)/);
+  return match ? match[1] : null;
+}
+
+/**
  * Holds a reference to the active MutationObserver so that it can be
  * disconnected before re-attaching on SPA navigation.
  *
@@ -595,21 +982,47 @@ let activeObserver = null;
  * Called on `popstate`, `hashchange`, and URL-polling detection when the
  * current URL matches `https://leetcode.com/problems/*`.
  *
+ * Fix: Preserves pendingAttempt when navigating within the same problem
+ * (e.g., /problems/two-sum/ → /problems/two-sum/submissions/123/).
+ * Only clears state when navigating to a different problem or leaving problem pages.
+ *
  * Requirements: 2.9
+ *
+ * @param {string} previousUrl - The URL before navigation (for comparison).
  */
-function reconnectObserver() {
+function reconnectObserver(previousUrl = '') {
+  const currentHref = window.location.href;
+  
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] reconnectObserver called, previousURL: ${previousUrl}, currentURL: ${currentHref}, timestamp: ${Date.now()}`);
+  }
+  
   if (activeObserver) {
     activeObserver.disconnect();
     activeObserver = null;
   }
 
-  // Reset any pending submission state from the prior page — prevents cross-page
-  // false positives where a stale "Accepted" node on the new page would fire
-  // while pendingSubmission is still true from a prior navigation.
-  clearPendingSubmission();
+  // Extract problem slugs to determine if this is same-problem navigation
+  const previousSlug = extractProblemSlug(previousUrl);
+  const currentSlug = extractProblemSlug(currentHref);
+  
+  const isSameProblemNavigation = previousSlug && currentSlug && previousSlug === currentSlug;
+
+  // Only clear pending attempt if navigating to a DIFFERENT problem or leaving problem pages
+  // Preserve state for same-problem navigation (e.g., problem page → submission detail page)
+  if (!isSameProblemNavigation && pendingAttempt) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Different problem navigation detected (${previousSlug} → ${currentSlug}), clearing state`);
+    }
+    clearPendingAttempt('navigation');
+  } else if (isSameProblemNavigation && pendingAttempt) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Same-problem navigation detected (${currentSlug}), preserving pendingAttempt`);
+    }
+  }
 
   // Only attach on problem pages
-  if (/^https:\/\/leetcode\.com\/problems\//.test(window.location.href)) {
+  if (/^https:\/\/leetcode\.com\/problems\//.test(currentHref)) {
     // The new result panel may not yet be in the DOM; wait one tick so the
     // SPA has a chance to mount the new route before we query for the panel.
     setTimeout(() => {
@@ -624,7 +1037,7 @@ function reconnectObserver() {
  * `hashchange` events.
  *
  * When a URL change to a LeetCode problem page is detected, calls
- * `reconnectObserver()` and updates `currentUrl`.
+ * `reconnectObserver()` with the previous URL and updates `currentUrl`.
  *
  * Requirements: 2.9
  */
@@ -632,8 +1045,9 @@ function startUrlPolling() {
   function poll() {
     const latestUrl = window.location.href;
     if (latestUrl !== currentUrl) {
+      const previousUrl = currentUrl;
       currentUrl = latestUrl;
-      reconnectObserver();
+      reconnectObserver(previousUrl);
     }
     requestAnimationFrame(poll);
   }
@@ -641,9 +1055,10 @@ function startUrlPolling() {
 }
 
 // Listen for browser history navigation events that *do* fire events
+// For these events, we don't have the previous URL, so pass empty string
 if (typeof window !== 'undefined') {
-  window.addEventListener('popstate',    reconnectObserver);
-  window.addEventListener('hashchange',  reconnectObserver);
+  window.addEventListener('popstate', () => reconnectObserver(''));
+  window.addEventListener('hashchange', () => reconnectObserver(''));
 }
 
 // ---------------------------------------------------------------------------
@@ -662,45 +1077,67 @@ if (typeof window !== 'undefined') {
 let isModalOpen = false;
 
 /**
- * Boolean flag that indicates the user has clicked the LeetCode Submit button
- * and a submission result is expected. The observer will only fire injectModal()
- * when this flag is true, preventing false positives from existing "Accepted"
- * status text rendered during page load (e.g. previous submission history).
+ * Stores the complete submission payload captured at Submit click, before
+ * LeetCode navigates to the submission-detail page where problem metadata
+ * is unavailable.
  *
- * Set to true when a click on LeetCode's submit button is detected.
- * Reset to false after the modal fires or after a 15-second safety timeout.
+ * Structure: { payload, startedAt, problemSlug } | null
+ *
+ * Lifecycle:
+ *  - Set at Submit click after successful scrapeSubmission()
+ *  - Preserved during same-problem navigation
+ *  - Cleared on: accepted verdict, non-accepted verdict, different-problem navigation, timeout
+ *
+ * @type {Object|null}
+ */
+let pendingAttempt = null;
+
+/**
+ * Enable/disable diagnostic logging for live validation.
+ * Set to true to log state transitions, container lifecycle, and verdict detection.
+ * SECURITY: Logs contain ONLY state names, boolean flags, element selectors,
+ * verdict strings, and timestamps. No credentials, tokens, or source code.
  *
  * @type {boolean}
  */
-let pendingSubmission = false;
+const ENABLE_DIAGNOSTICS = false;
 
 /**
- * Holds the setTimeout handle for resetting pendingSubmission after 15 seconds.
- * Cleared when the modal fires so we don't reset the flag twice.
+ * Holds the setTimeout handle for resetting pendingAttempt after 15 seconds.
+ * Cleared when the modal fires so we don't reset the state twice.
  *
  * @type {ReturnType<typeof setTimeout>|null}
  */
-let pendingSubmissionTimeout = null;
+let pendingAttemptTimeout = null;
 
 /**
- * Resets the pendingSubmission flag and clears its safety timeout.
+ * Clears the pending attempt state and its safety timeout.
+ * @param {string} reason - Diagnostic reason for clearing (for logging only).
  */
-function clearPendingSubmission() {
-  pendingSubmission = false;
-  if (pendingSubmissionTimeout !== null) {
-    clearTimeout(pendingSubmissionTimeout);
-    pendingSubmissionTimeout = null;
+function clearPendingAttempt(reason = 'unknown') {
+  if (ENABLE_DIAGNOSTICS && pendingAttempt) {
+    console.log(`[LeetUp:DIAG] clearPendingAttempt — reason: ${reason}, timestamp: ${Date.now()}`);
+  }
+  pendingAttempt = null;
+  if (pendingAttemptTimeout !== null) {
+    clearTimeout(pendingAttemptTimeout);
+    pendingAttemptTimeout = null;
   }
 }
 
 /**
  * Attaches a capture-phase click listener to document that watches for clicks
- * on LeetCode's "Submit" button. When detected, sets pendingSubmission = true
- * and arms a 15-second safety timeout to reset it.
+ * on LeetCode's "Submit" button. When detected:
+ *  1. Scrapes submission payload from the CURRENT page (before navigation)
+ *  2. Stores payload in pendingAttempt state
+ *  3. Arms a 15-second safety timeout to reset state
  *
  * LeetCode renders its submit button as a button element whose text contains
  * "Submit" (case-insensitive). We use capture phase so React's synthetic event
  * system cannot stop propagation before we see it.
+ *
+ * Fix: Payload is captured BEFORE LeetCode navigates to /submissions/<id>/
+ * where problem metadata is unavailable.
  */
 function attachSubmitClickListener() {
   document.addEventListener('click', (e) => {
@@ -714,11 +1151,41 @@ function attachSubmitClickListener() {
       const tag  = el.tagName && el.tagName.toLowerCase();
       const text = el.textContent && el.textContent.trim().toLowerCase();
       if (tag === 'button' && text === 'submit') {
-        // LeetCode submit button clicked — arm the observer
-        pendingSubmission = true;
-        if (pendingSubmissionTimeout !== null) clearTimeout(pendingSubmissionTimeout);
-        pendingSubmissionTimeout = setTimeout(clearPendingSubmission, 15000);
-        console.info('[LeetUp] Submit button clicked — observer armed');
+        // LeetCode submit button clicked — capture payload NOW before navigation
+        const existingContainer = document.querySelector(RESULT_CONTAINER_SELECTOR);
+        const containerState = existingContainer
+          ? `exists (verdict: ${existingContainer.textContent.trim().substring(0, 50)})`
+          : 'not present';
+        
+        if (ENABLE_DIAGNOSTICS) {
+          console.log(`[LeetUp:DIAG] Submit button clicked, timestamp: ${Date.now()}, result container: ${containerState}`);
+        }
+
+        // Scrape payload from CURRENT page (has problem metadata)
+        const payload = scrapeSubmission();
+        
+        if (payload) {
+          // Success: store the payload and arm the observer
+          pendingAttempt = {
+            payload,
+            startedAt: Date.now(),
+            problemSlug: payload.problemSlug,
+          };
+          
+          if (pendingAttemptTimeout !== null) clearTimeout(pendingAttemptTimeout);
+          pendingAttemptTimeout = setTimeout(() => clearPendingAttempt('15s-timeout'), 15000);
+          
+          if (ENABLE_DIAGNOSTICS) {
+            console.log(`[LeetUp:DIAG] Payload captured successfully, pendingAttempt armed for problem: ${payload.problemSlug}`);
+          }
+        } else {
+          // Failure: payload unavailable, no modal possible
+          if (ENABLE_DIAGNOSTICS) {
+            console.log(`[LeetUp:DIAG] Payload capture failed at Submit click, no modal will be shown`);
+          }
+          pendingAttempt = null;
+        }
+        
         break;
       }
       el = el.parentElement;
@@ -845,39 +1312,61 @@ function attachObserver() {
   // Phase 2: Verdict observer — scoped to the result container only.
   // Inspects ONLY newly added nodes and characterData targets; never
   // walks mutation.target's existing subtree.
+  //
+  // Fix: Uses stored payload from pendingAttempt instead of re-scraping
+  // on the submission-detail page where problem metadata is unavailable.
   // ------------------------------------------------------------------
   function attachVerdictObserver(container) {
     if (disconnected) return;
 
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Phase 2: Verdict observer attaching to container, timestamp: ${Date.now()}, pendingAttempt: ${pendingAttempt ? 'exists' : 'null'}`);
+    }
+
     const verdictObserver = new MutationObserver((mutations) => {
       if (isModalOpen) return;
-      if (!pendingSubmission) return;
+      if (!pendingAttempt) return;  // Changed from pendingSubmission
 
       for (const mutation of mutations) {
         if (mutation.type === 'characterData') {
           // Text node data changed in-place — check the target directly.
           const text = mutation.target.textContent.trim();
           if (text === 'Accepted') {
-            clearPendingSubmission();
-            const payload = scrapeSubmission();
-            if (payload) injectModal(payload);
+            if (ENABLE_DIAGNOSTICS) {
+              console.log(`[LeetUp:DIAG] Accepted verdict detected (characterData), timestamp: ${Date.now()}`);
+            }
+            // Use stored payload from pendingAttempt (captured before navigation)
+            const storedPayload = pendingAttempt.payload;
+            clearPendingAttempt('accepted-verdict');
+            injectModal(storedPayload);  // No scrapeSubmission() call
             return;
           }
           if (FINAL_NON_ACCEPTED_VERDICTS.has(text)) {
-            clearPendingSubmission();
+            if (ENABLE_DIAGNOSTICS) {
+              console.log(`[LeetUp:DIAG] Non-accepted verdict detected: ${text}, timestamp: ${Date.now()}`);
+            }
+            clearPendingAttempt('non-accepted-verdict');
             return;
           }
         } else if (mutation.type === 'childList') {
           // Inspect only newly added nodes — never mutation.target's subtree.
           for (const addedNode of mutation.addedNodes) {
             if (hasAcceptedTextInAdded(addedNode)) {
-              clearPendingSubmission();
-              const payload = scrapeSubmission();
-              if (payload) injectModal(payload);
+              if (ENABLE_DIAGNOSTICS) {
+                console.log(`[LeetUp:DIAG] Accepted verdict detected (childList), timestamp: ${Date.now()}`);
+              }
+              // Use stored payload from pendingAttempt (captured before navigation)
+              const storedPayload = pendingAttempt.payload;
+              clearPendingAttempt('accepted-verdict');
+              injectModal(storedPayload);  // No scrapeSubmission() call
               return;
             }
             if (hasNonAcceptedVerdictInAdded(addedNode)) {
-              clearPendingSubmission();
+              const verdictText = addedNode.textContent ? addedNode.textContent.trim().substring(0, 50) : 'unknown';
+              if (ENABLE_DIAGNOSTICS) {
+                console.log(`[LeetUp:DIAG] Non-accepted verdict detected: ${verdictText}, timestamp: ${Date.now()}`);
+              }
+              clearPendingAttempt('non-accepted-verdict');
               return;
             }
           }
@@ -904,16 +1393,23 @@ function attachObserver() {
   // the previous result panel persists), skip Phase 1 entirely.
   const existingContainer = document.querySelector(RESULT_CONTAINER_SELECTOR);
   if (existingContainer) {
+    if (ENABLE_DIAGNOSTICS) {
+      console.log(`[LeetUp:DIAG] Phase 1 skipped: container already exists, timestamp: ${Date.now()}`);
+    }
     attachVerdictObserver(existingContainer);
     return handle;
+  }
+
+  if (ENABLE_DIAGNOSTICS) {
+    console.log(`[LeetUp:DIAG] Phase 1: Container insertion watcher starting, timestamp: ${Date.now()}`);
   }
 
   const insertionWatcher = new MutationObserver((mutations) => {
     if (disconnected) return;
 
     // Only care about insertions while we are waiting for a submission result.
-    // If pendingSubmission is false, ignore — we'll re-arm when needed.
-    if (!pendingSubmission) return;
+    // If pendingAttempt is null, ignore — we'll re-arm when needed.
+    if (!pendingAttempt) return;
 
     for (const mutation of mutations) {
       if (mutation.type !== 'childList') continue;
@@ -930,6 +1426,9 @@ function attachObserver() {
         }
 
         if (container) {
+          if (ENABLE_DIAGNOSTICS) {
+            console.log(`[LeetUp:DIAG] Phase 1→2: Result container inserted, timestamp: ${Date.now()}`);
+          }
           // Disconnect Phase 1, switch to Phase 2.
           insertionWatcher.disconnect();
           attachVerdictObserver(container);
@@ -938,13 +1437,20 @@ function attachObserver() {
           // inside it (common when LeetCode renders the result in one React
           // commit). Check the addedNodes subtree of the container itself now,
           // since the verdict observer was not yet attached for that mutation.
-          if (pendingSubmission && !isModalOpen) {
+          if (pendingAttempt && !isModalOpen) {
             if (hasAcceptedTextInAdded(container)) {
-              clearPendingSubmission();
-              const payload = scrapeSubmission();
-              if (payload) injectModal(payload);
+              if (ENABLE_DIAGNOSTICS) {
+                console.log(`[LeetUp:DIAG] Accepted verdict found in newly inserted container, timestamp: ${Date.now()}`);
+              }
+              // Use stored payload from pendingAttempt
+              const storedPayload = pendingAttempt.payload;
+              clearPendingAttempt('accepted-verdict');
+              injectModal(storedPayload);
             } else if (hasNonAcceptedVerdictInAdded(container)) {
-              clearPendingSubmission();
+              if (ENABLE_DIAGNOSTICS) {
+                console.log(`[LeetUp:DIAG] Non-accepted verdict found in newly inserted container, timestamp: ${Date.now()}`);
+              }
+              clearPendingAttempt('non-accepted-verdict');
             }
           }
           return;
@@ -988,6 +1494,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getDomain,
     deriveTopicSlugFallback,
     buildRepoPath,
+    htmlToPlainText,
+    extractDescriptionFromNextData,
     scrapeSubmission,
     insertMarkdown,
     createToolbar,
@@ -996,12 +1504,14 @@ if (typeof module !== 'undefined' && module.exports) {
     attachSubmitClickListener,
     reconnectObserver,
     startUrlPolling,
+    extractProblemSlug,
+    clearPendingAttempt,
     // Export getter/setter for isModalOpen so tests can inspect and reset it.
     get isModalOpen() { return isModalOpen; },
     set isModalOpen(v) { isModalOpen = v; },
-    // Export getter/setter for pendingSubmission so tests can inspect and reset it.
-    get pendingSubmission() { return pendingSubmission; },
-    set pendingSubmission(v) { pendingSubmission = v; },
+    // Export getter/setter for pendingAttempt so tests can inspect and reset it.
+    get pendingAttempt() { return pendingAttempt; },
+    set pendingAttempt(v) { pendingAttempt = v; },
     // Export getter/setter for currentUrl so tests can inspect and reset it.
     get currentUrl() { return currentUrl; },
     set currentUrl(v) { currentUrl = v; },
